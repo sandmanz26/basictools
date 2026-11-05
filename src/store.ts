@@ -12,16 +12,23 @@ import type {
   RoundResult,
   ShareLink,
   StageId,
+  Talent,
   TestQuestion,
   User,
 } from '@/types'
-import { CANDIDATES, POSITIONS, PROJECTS, ROLES, USERS } from '@/data/mock'
+import { CANDIDATES, POSITIONS, PROJECTS, ROLES, TALENTS, USERS } from '@/data/mock'
+import { findTalent } from '@/lib/talent'
+import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
+
+export interface ImportOpts { onDuplicate: 'skip' | 'update'; createPositions: boolean }
+export interface ImportSummary { added: number; updated: number; skipped: number; newTalents: number; newPositions: number }
 
 interface State {
   projects: Project[]
   positions: Position[]
   candidates: Candidate[]
+  talents: Talent[]
   roles: Role[]
   users: User[]
   shares: ShareLink[]
@@ -46,6 +53,13 @@ interface State {
   deleteCandidate: (id: string) => void
   archiveCandidate: (id: string, archived: boolean) => void
 
+  addTalent: (t?: Partial<Talent>) => string
+  updateTalent: (id: string, patch: Partial<Talent>) => void
+  deleteTalent: (id: string) => void
+  addTalentsToProject: (projectId: string, talentIds: string[], positionId: string) => number
+  importCandidates: (projectId: string, records: ImportRecord[], opts: ImportOpts) => ImportSummary
+  importTalents: (records: ImportRecord[]) => ImportSummary
+
   addPosition: (projectId: string) => string
   updatePosition: (id: string, patch: Partial<Position>) => void
   deletePosition: (id: string) => void
@@ -68,6 +82,7 @@ const seed = () => ({
   projects: PROJECTS,
   positions: POSITIONS,
   candidates: CANDIDATES,
+  talents: TALENTS,
   roles: ROLES,
   users: USERS,
   shares: [
@@ -87,12 +102,31 @@ const seed = () => ({
 const stagesOf = (s: State, projectId: string) => s.projects.find((p) => p.id === projectId)?.stages ?? DEFAULT_STAGES()
 const stageById = (st: Stage[], id: string) => st.find((x) => x.id === id)
 
+const blankCandidate = (projectId: string, talentId: string, stage: Stage | undefined): Candidate => ({
+  id: 'c-' + nanoid(6), projectId, talentId, name: '', email: '', phone: '', positionId: '', source: '',
+  screeningScore: null, screeningResult: 'pending', salaryMin: null, salaryMax: null, archived: false, arrangement: 'Any',
+  stage: stage?.id ?? '', nextStep: stage?.nextStep ?? '', owner: 'Sari', appliedAt: today(), rejectReason: '', notes: '', rounds: {},
+})
+
+const newTalent = (p: Partial<Talent>): Talent => ({
+  id: 't-' + nanoid(6), name: '', email: '', phone: '', source: '', skills: '', salaryMin: null, salaryMax: null,
+  arrangement: 'Any', notes: '', createdAt: today(), ...p,
+})
+
+/** Fill only the empty fields of a pool entry from new data. */
+const fillTalent = (t: Talent, r: Partial<Talent>): Talent => ({
+  ...t,
+  email: t.email || r.email || '', phone: t.phone || r.phone || '', source: t.source || r.source || '',
+  skills: t.skills || r.skills || '', salaryMin: t.salaryMin ?? r.salaryMin ?? null, salaryMax: t.salaryMax ?? r.salaryMax ?? null,
+  arrangement: t.arrangement !== 'Any' ? t.arrangement : r.arrangement || 'Any',
+})
+
 const mapC = (s: State, id: string, fn: (c: Candidate) => Candidate) =>
   ({ candidates: s.candidates.map((c) => (c.id === id ? fn(c) : c)) })
 
 export const useStore = create<State>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...seed(),
       setUser: (id) => set({ currentUserId: id }),
       setProject: (id) => set({ activeProjectId: id }),
@@ -148,24 +182,23 @@ export const useStore = create<State>()(
         }),
 
       addCandidate: (c) => {
-        const id = 'c-' + nanoid(6)
-        set((s) => {
-          const first = stagesOf(s, s.activeProjectId)[0]
-          return {
-          candidates: [
-            {
-              id, projectId: s.activeProjectId, name: 'New candidate', email: '', phone: '', positionId: '',
-              source: 'LinkedIn', screeningScore: null, screeningResult: 'pending', salaryMin: null, salaryMax: null,
-              archived: false, arrangement: 'Any', stage: first?.id ?? '', nextStep: first?.nextStep ?? '', owner: 'Sari',
-              appliedAt: today(), rejectReason: '', notes: '', rounds: {},
-              ...c,
-            },
-            ...s.candidates,
-          ],
-        }})
-        return id
+        const cand = blankCandidate(get().activeProjectId, '', stagesOf(get(), get().activeProjectId)[0])
+        const talent = newTalent({ name: 'New candidate', source: 'LinkedIn' })
+        const full: Candidate = { ...cand, name: talent.name, source: talent.source, ...c, talentId: talent.id }
+        set((s) => ({ talents: [talent, ...s.talents], candidates: [full, ...s.candidates] }))
+        return full.id
       },
-      updateCandidate: (id, patch) => set((s) => mapC(s, id, (c) => ({ ...c, ...patch }))),
+      updateCandidate: (id, patch) =>
+        set((s) => {
+          const cur = s.candidates.find((c) => c.id === id)
+          const shared: Partial<Candidate> = {}
+          for (const k of ['name', 'email', 'phone'] as const) if (k in patch) shared[k] = patch[k]
+          if (!cur?.talentId || Object.keys(shared).length === 0) return mapC(s, id, (c) => ({ ...c, ...patch }))
+          return {
+            candidates: s.candidates.map((c) => (c.id === id ? { ...c, ...patch } : c.talentId === cur.talentId ? { ...c, ...shared } : c)),
+            talents: s.talents.map((t) => (t.id === cur.talentId ? { ...t, ...shared } : t)),
+          }
+        }),
       updateRound: (id, key, patch) =>
         set((s) => mapC(s, id, (c) => ({ ...c, rounds: { ...c.rounds, [key]: { ...(c.rounds[key] ?? emptyRound()), ...patch } } }))),
       // Setting a result moves the candidate: pass -> next stage, fail -> the pipeline's "lost" stage.
@@ -184,6 +217,119 @@ export const useStore = create<State>()(
         set((s) => mapC(s, id, (c) => ({ ...c, stage, nextStep: stageById(stagesOf(s, c.projectId), stage)?.nextStep ?? c.nextStep }))),
       archiveCandidate: (id, archived) => set((s) => mapC(s, id, (c) => ({ ...c, archived }))),
       deleteCandidate: (id) => set((s) => ({ candidates: s.candidates.filter((c) => c.id !== id) })),
+
+      addTalent: (t) => {
+        const talent = newTalent({ name: 'New talent', ...t })
+        set((s) => ({ talents: [talent, ...s.talents] }))
+        return talent.id
+      },
+      updateTalent: (id, patch) =>
+        set((s) => {
+          const shared: Partial<Candidate> = {}
+          for (const k of ['name', 'email', 'phone'] as const) if (k in patch) shared[k] = patch[k]
+          return {
+            talents: s.talents.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+            candidates: Object.keys(shared).length ? s.candidates.map((c) => (c.talentId === id ? { ...c, ...shared } : c)) : s.candidates,
+          }
+        }),
+      // Project candidates stay; they just lose the link to the pool.
+      deleteTalent: (id) =>
+        set((s) => ({
+          talents: s.talents.filter((t) => t.id !== id),
+          candidates: s.candidates.map((c) => (c.talentId === id ? { ...c, talentId: '' } : c)),
+        })),
+      addTalentsToProject: (projectId, talentIds, positionId) => {
+        const s = get()
+        const first = stagesOf(s, projectId)[0]
+        const have = new Set(s.candidates.filter((c) => c.projectId === projectId).map((c) => c.talentId))
+        const add: Candidate[] = []
+        for (const id of talentIds) {
+          const t = s.talents.find((x) => x.id === id)
+          if (!t || have.has(id)) continue
+          add.push({
+            ...blankCandidate(projectId, id, first), name: t.name, email: t.email, phone: t.phone, source: t.source,
+            salaryMin: t.salaryMin, salaryMax: t.salaryMax, arrangement: t.arrangement, positionId, notes: t.notes,
+          })
+        }
+        set({ candidates: [...add, ...s.candidates] })
+        return add.length
+      },
+      importCandidates: (projectId, records, opts) => {
+        const s = get()
+        const stages = stagesOf(s, projectId)
+        let talents = [...s.talents]
+        let candidates = [...s.candidates]
+        const positions = [...s.positions]
+        const sum: ImportSummary = { added: 0, updated: 0, skipped: 0, newTalents: 0, newPositions: 0 }
+        for (const r of records) {
+          let t = findTalent(talents, r)
+          if (!t) {
+            t = newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes })
+            talents.push(t)
+            sum.newTalents++
+          } else {
+            const cur = t
+            talents = talents.map((x) => (x.id === cur.id ? fillTalent(x, { ...r, arrangement: r.arrangement || 'Any' }) : x))
+          }
+          let positionId = ''
+          if (r.positionTitle) {
+            let p = positions.find((x) => x.projectId === projectId && x.title.toLowerCase() === r.positionTitle.toLowerCase())
+            if (!p && opts.createPositions) {
+              p = { id: 'pos-' + nanoid(6), projectId, title: r.positionTitle, department: '', level: 'Mid', headcount: 1, status: 'open', arrangement: 'Any', salaryMin: null, salaryMax: null, description: '', requirements: '', questions: [] }
+              positions.push(p)
+              sum.newPositions++
+            }
+            positionId = p?.id ?? ''
+          }
+          const stage = stages.find((x) => x.id === r.stage) ?? stages[0]
+          const rounds: Candidate['rounds'] = {}
+          for (const [k, v] of Object.entries(r.rounds)) rounds[k] = { ...emptyRound(), ...Object.fromEntries(Object.entries(v).filter(([, x]) => x)) }
+          const existing = candidates.find((c) => c.projectId === projectId && c.talentId === t!.id)
+          if (existing) {
+            if (opts.onDuplicate === 'skip') { sum.skipped++; continue }
+            candidates = candidates.map((c) => c.id !== existing.id ? c : {
+              ...c,
+              name: r.name || c.name, email: r.email || c.email, phone: r.phone || c.phone, source: r.source || c.source,
+              positionId: positionId || c.positionId,
+              screeningScore: r.score ?? c.screeningScore,
+              screeningResult: r.score == null ? c.screeningResult : r.score >= 65 ? 'pass' : 'fail',
+              salaryMin: r.salaryMin ?? c.salaryMin, salaryMax: r.salaryMax ?? c.salaryMax,
+              arrangement: r.arrangement || c.arrangement, stage: r.stage || c.stage, nextStep: r.nextStep || c.nextStep,
+              owner: r.owner || c.owner, notes: r.notes || c.notes, archived: r.archived || c.archived,
+              rounds: { ...c.rounds, ...rounds },
+            })
+            sum.updated++
+            continue
+          }
+          candidates.unshift({
+            ...blankCandidate(projectId, t.id, stage), name: r.name, email: r.email, phone: r.phone, source: r.source || 'Import',
+            positionId, screeningScore: r.score, screeningResult: r.score == null ? 'pending' : r.score >= 65 ? 'pass' : 'fail',
+            salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any',
+            nextStep: r.nextStep || stage?.nextStep || '', owner: r.owner || 'Sari', appliedAt: r.appliedAt || today(),
+            archived: r.archived, notes: r.notes, rounds,
+          })
+          sum.added++
+        }
+        set({ talents, candidates, positions })
+        return sum
+      },
+      importTalents: (records) => {
+        let talents = [...get().talents]
+        const sum: ImportSummary = { added: 0, updated: 0, skipped: 0, newTalents: 0, newPositions: 0 }
+        for (const r of records) {
+          const t = findTalent(talents, r)
+          if (t) {
+            talents = talents.map((x) => (x.id === t.id ? { ...fillTalent(x, { ...r, arrangement: r.arrangement || 'Any' }), notes: x.notes || r.notes } : x))
+            sum.updated++
+          } else {
+            talents.unshift(newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes }))
+            sum.added++
+            sum.newTalents++
+          }
+        }
+        set({ talents })
+        return sum
+      },
 
       addPosition: (projectId) => {
         const id = 'pos-' + nanoid(6)
@@ -238,7 +384,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v2' },
+    { name: 'hiring-pipeline-v3' },
   ),
 )
 

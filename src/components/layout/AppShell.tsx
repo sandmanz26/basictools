@@ -1,11 +1,12 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { BriefcaseBusiness, FolderCog, FolderKanban, Link2, Settings, UserRoundCog } from 'lucide-react'
+import { BriefcaseBusiness, FolderCog, FolderKanban, Link2, Settings, UserRoundCog, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCurrentUser, useStore } from '@/store'
 import { NativeSelect } from '@/components/NativeSelect'
 
 const nav = [
   { to: '/', label: 'Pipeline', icon: FolderKanban, end: true },
+  { to: '/talent', label: 'Talent Pool', icon: Users },
   { to: '/projects', label: 'Projects & Pipeline', icon: FolderCog },
   { to: '/positions', label: 'Positions & Tests', icon: BriefcaseBusiness },
   { to: '/sharing', label: 'Share links', icon: Link2 },

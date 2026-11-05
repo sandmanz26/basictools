@@ -6,6 +6,7 @@ import type {
   Role,
   Round,
   StageId,
+  Talent,
   User,
   WorkArrangement,
 } from '@/types'
@@ -138,8 +139,9 @@ const seeds: Seed[] = [
 
 const names = (n: string) => n.toLowerCase().replace(/[^a-z]+/g, '.')
 
-export const CANDIDATES: Candidate[] = seeds.map((s, i) => ({
+const BASE: Candidate[] = seeds.map((s, i) => ({
   id: `c${i + 1}`,
+  talentId: `t${i + 1}`,
   projectId: s.proj,
   name: s.name,
   email: `${names(s.name)}@mail.com`,
@@ -161,3 +163,28 @@ export const CANDIDATES: Candidate[] = seeds.map((s, i) => ({
   rejectReason: s.stage === 'rejected' ? 'Technical screening below threshold, salary above band' : '',
   notes: '',
 }))
+
+// Citra also applied to the design project: same talent, second project.
+export const CANDIDATES: Candidate[] = [
+  ...BASE,
+  {
+    ...BASE[1], id: 'c16', projectId: 'p2', positionId: 'pos4', stage: 'applied', nextStep: 'Review CV & send technical screening',
+    screeningScore: null, screeningResult: 'pending', rounds: {}, appliedAt: '2026-11-02',
+  },
+]
+
+const pool = (id: string, name: string, src: string, skills: string, sal: number, arr: WorkArrangement): Talent => ({
+  id, name, email: `${names(name)}@mail.com`, phone: '+62 811-0000-' + id.slice(-3), source: src, skills,
+  salaryMin: sal, salaryMax: Math.round((sal * 1.25) / 500_000) * 500_000, arrangement: arr, notes: '', createdAt: '2026-11-03',
+})
+
+export const TALENTS: Talent[] = [
+  ...BASE.map((c): Talent => ({
+    id: c.talentId, name: c.name, email: c.email, phone: c.phone, source: c.source, skills: '',
+    salaryMin: c.salaryMin, salaryMax: c.salaryMax, arrangement: c.arrangement, notes: '', createdAt: c.appliedAt,
+  })),
+  pool('t101', 'Rizky Maulana', 'LinkedIn', 'React, TypeScript, Next.js', 17_000_000, 'Hybrid'),
+  pool('t102', 'Siti Aisyah', 'Referral', 'Go, PostgreSQL, Kafka', 28_000_000, 'WFO'),
+  pool('t103', 'Tommy Hartono', 'Headhunter', 'Figma, UX research, design systems', 18_000_000, 'Hybrid'),
+  pool('t104', 'Wulan Sari', 'Website', 'Playwright, Cypress, API testing', 11_000_000, 'WFH'),
+]

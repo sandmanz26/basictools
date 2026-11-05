@@ -23,9 +23,24 @@ export interface Round {
   notes: string
 }
 
+export interface Talent {
+  id: string
+  name: string
+  email: string
+  phone: string
+  source: string
+  skills: string // free text / comma separated
+  salaryMin: number | null
+  salaryMax: number | null
+  arrangement: WorkArrangement
+  notes: string
+  createdAt: string
+}
+
 export interface Candidate {
   id: string
   projectId: string
+  talentId: string // link to the Talent Pool entry (one talent can be in many projects)
   name: string
   email: string
   phone: string

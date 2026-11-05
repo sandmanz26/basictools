@@ -17,7 +17,7 @@ export function PipelineView({
   stages: Stage[]
   mode: ViewMode
   initialView?: 'table' | 'kanban'
-  toolbarExtra?: React.ReactNode
+  toolbarExtra?: (rows: Candidate[]) => React.ReactNode
   lockView?: boolean
 }) {
   const [view, setView] = useState<'table' | 'kanban'>(initialView)
@@ -40,7 +40,7 @@ export function PipelineView({
         <div className="min-w-0 flex-1">
           <FilterBar filters={filters} onChange={setFilters} positions={positions} stages={stages} owners={owners} showSalary={mode.showSalary} total={candidates.filter((c) => c.archived === filters.archived).length} shown={rows.length} />
         </div>
-        {toolbarExtra}
+        {toolbarExtra?.(rows)}
       </div>
       <div className="min-h-0 flex-1">
         {view === 'table' ? (
