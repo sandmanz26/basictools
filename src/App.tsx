@@ -19,6 +19,9 @@ import PmTeam from '@/pages/pm/PmTeam'
 import PmBudget from '@/pages/pm/PmBudget'
 import PmUpdates from '@/pages/pm/PmUpdates'
 import PmSettings from '@/pages/pm/PmSettings'
+import MktPipeline from '@/pages/mkt/MktPipeline'
+import MktEmail from '@/pages/mkt/MktEmail'
+import MktSettings from '@/pages/mkt/MktSettings'
 import { useCan } from '@/store'
 import type { Permission } from '@/types'
 
@@ -54,6 +57,10 @@ export default function App() {
             <Route path="pm/team" element={<Guard perm="module.pm"><PmTeam /></Guard>} />
             <Route path="pm/budget" element={<Guard perm="module.pm"><PmBudget /></Guard>} />
             <Route path="pm/settings" element={<Guard perm="module.pm"><PmSettings /></Guard>} />
+
+            <Route path="mkt" element={<Guard perm="module.mkt"><MktPipeline /></Guard>} />
+            <Route path="mkt/email" element={<Guard perm="module.mkt"><MktEmail /></Guard>} />
+            <Route path="mkt/settings" element={<Guard perm="module.mkt"><MktSettings /></Guard>} />
 
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/projects" replace />} />

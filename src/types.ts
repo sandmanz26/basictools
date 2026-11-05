@@ -108,6 +108,9 @@ export type Permission =
   | 'module.hr'
   | 'module.pm'
   | 'pm.edit'
+  | 'module.mkt'
+  | 'mkt.edit'
+  | 'mkt.send'
 
 export interface Role {
   id: string
@@ -248,4 +251,50 @@ export interface PMCollections {
   members: Member[]
   budget: BudgetItem[]
   updates: StatusUpdate[]
+}
+
+// ---------- Marketing ----------
+
+export interface Lead {
+  id: string
+  name: string // contact person
+  company: string
+  title: string
+  email: string
+  phone: string
+  source: string
+  stage: StageId // id in mktStages
+  value: number | null // estimated deal value, IDR
+  owner: string
+  nextAction: string
+  nextActionDate: string // yyyy-mm-dd
+  tags: string
+  notes: string
+  createdAt: string
+  lastContactAt: string
+  unsubscribed: boolean
+}
+
+export interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  body: string // plain text, supports {{name}} {{firstName}} {{company}} {{title}} {{owner}}
+}
+
+export interface SentEmail {
+  id: string
+  leadId: string
+  to: string
+  subject: string
+  body: string
+  sentAt: string // ISO
+  sentBy: string
+  status: 'sent' | 'failed'
+  error: string
+}
+
+export interface MsConfig {
+  clientId: string
+  tenant: string // 'common' | 'organizations' | tenant id
 }

@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 import type {
   Candidate,
+  EmailTemplate,
+  Lead,
+  MsConfig,
+  SentEmail,
   Permission,
   PMCollections,
   Position,
@@ -18,11 +22,11 @@ import type {
   TestQuestion,
   User,
 } from '@/types'
-import { BUDGET, CANDIDATES, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
+import { BUDGET, CANDIDATES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
 import { DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
-import { DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
+import { DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
 
 export interface ImportOpts { onDuplicate: 'skip' | 'update'; createPositions: boolean }
 export interface ImportSummary { added: number; updated: number; skipped: number; newTalents: number; newPositions: number }
@@ -41,8 +45,23 @@ interface State {
   roles: Role[]
   users: User[]
   shares: ShareLink[]
+  leads: Lead[]
+  mktStages: Stage[]
+  templates: EmailTemplate[]
+  emails: SentEmail[]
+  msConfig: MsConfig
   currentUserId: string
   activeProjectId: string
+
+  setMktStages: (stages: Stage[]) => void
+  removeMktStage: (stageId: string, moveTo: string) => void
+  addLead: (l?: Partial<Lead>) => string
+  updateLead: (id: string, patch: Partial<Lead>) => void
+  deleteLead: (id: string) => void
+  upsertTemplate: (t: EmailTemplate) => void
+  deleteTemplate: (id: string) => void
+  logEmail: (e: SentEmail) => void
+  setMsConfig: (patch: Partial<MsConfig>) => void
 
   setUser: (id: string) => void
   setProject: (id: string) => void
@@ -116,6 +135,11 @@ const seed = () => ({
       view: 'table' as const, showSalary: true, showContact: true, positionIds: [], enabled: true, createdAt: '2026-10-31', views: 3,
     },
   ],
+  leads: LEADS,
+  mktStages: DEFAULT_MKT_STAGES(),
+  templates: EMAIL_TEMPLATES,
+  emails: [] as SentEmail[],
+  msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
   currentUserId: 'u1',
   activeProjectId: 'p1',
 })
@@ -149,6 +173,30 @@ export const useStore = create<State>()(
   persist(
     (set, get) => ({
       ...seed(),
+      setMktStages: (stages) => set({ mktStages: stages }),
+      removeMktStage: (stageId, moveTo) =>
+        set((s) => ({ mktStages: s.mktStages.filter((x) => x.id !== stageId), leads: s.leads.map((l) => (l.stage === stageId ? { ...l, stage: moveTo } : l)) })),
+      addLead: (l) => {
+        const id = 'l-' + nanoid(6)
+        set((s) => ({
+          leads: [{
+            id, name: 'New lead', company: '', title: '', email: '', phone: '', source: 'Website', stage: s.mktStages[0]?.id ?? '', value: null,
+            owner: s.users.find((u) => u.id === s.currentUserId)?.name ?? '', nextAction: '', nextActionDate: '', tags: '', notes: '', createdAt: today(), lastContactAt: '', unsubscribed: false, ...l,
+          }, ...s.leads],
+        }))
+        return id
+      },
+      updateLead: (id, patch) => set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
+      deleteLead: (id) => set((s) => ({ leads: s.leads.filter((l) => l.id !== id) })),
+      upsertTemplate: (t) => set((s) => ({ templates: s.templates.some((x) => x.id === t.id) ? s.templates.map((x) => (x.id === t.id ? t : x)) : [...s.templates, t] })),
+      deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((x) => x.id !== id) })),
+      logEmail: (e) =>
+        set((s) => ({
+          emails: [e, ...s.emails].slice(0, 500),
+          leads: e.status === 'sent' ? s.leads.map((l) => (l.id === e.leadId ? { ...l, lastContactAt: e.sentAt.slice(0, 10) } : l)) : s.leads,
+        })),
+      setMsConfig: (patch) => set((s) => ({ msConfig: { ...s.msConfig, ...patch } })),
+
       setUser: (id) => set({ currentUserId: id }),
       setProject: (id) => set({ activeProjectId: id }),
 
@@ -425,7 +473,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v4' },
+    { name: 'hiring-pipeline-v5' },
   ),
 )
 

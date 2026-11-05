@@ -15,6 +15,11 @@ const HR_TYPES = [
   { value: 'won', label: 'Won (hired)' },
   { value: 'lost', label: 'Lost (rejected)' },
 ]
+const MKT_TYPES = [
+  { value: 'active', label: 'In progress' },
+  { value: 'won', label: 'Won (customer)' },
+  { value: 'lost', label: 'Lost' },
+]
 const PM_TYPES = [
   { value: 'active', label: 'In progress' },
   { value: 'won', label: 'Done' },
@@ -28,7 +33,7 @@ export function StageEditor({
   onChange: (stages: Stage[]) => void
   countIn: (stageId: string) => number
   onRemove: (stageId: string, moveTo: string) => void
-  mode: 'hr' | 'pm'
+  mode: 'hr' | 'pm' | 'mkt'
   can: boolean
   onReset?: () => void
   itemLabel: string // "candidates" / "tasks"
@@ -53,7 +58,7 @@ export function StageEditor({
             <span className={cn('size-3 shrink-0 rounded-full', stageDot(s))} />
             <Input disabled={!can} className="h-8 w-44 font-medium" value={s.label} onChange={(e) => patch(s.id, { label: e.target.value })} />
             <NativeSelect disabled={!can} value={s.color} onChange={(v) => patch(s.id, { color: v })} options={Object.entries(STAGE_COLORS).map(([k, v]) => ({ value: k, label: v.label }))} />
-            <NativeSelect disabled={!can} value={s.type} onChange={(v) => patch(s.id, { type: v as StageType })} options={mode === 'hr' ? HR_TYPES : PM_TYPES} />
+            <NativeSelect disabled={!can} value={s.type} onChange={(v) => patch(s.id, { type: v as StageType })} options={mode === 'pm' ? PM_TYPES : mode === 'mkt' ? MKT_TYPES : HR_TYPES} />
             {mode === 'hr' && (
               <>
                 <label className="flex items-center gap-1.5 text-sm"><Switch disabled={!can} checked={s.interview} onCheckedChange={(v) => patch(s.id, { interview: v })} /> Interview</label>

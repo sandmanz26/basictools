@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  Megaphone, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
+  Mail, Megaphone, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
@@ -11,7 +11,7 @@ import type { Permission } from '@/types'
 
 interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean }
 interface Module {
-  id: 'projects' | 'hr' | 'pm'
+  id: 'projects' | 'hr' | 'pm' | 'mkt'
   short: string
   title: string
   base: string
@@ -60,6 +60,16 @@ export const MODULES: Module[] = [
         { to: '/pm/budget', label: 'Budget', icon: Wallet },
       ] },
       { label: 'Management', items: [{ to: '/pm/settings', label: 'Workflow settings', icon: SlidersHorizontal }] },
+    ],
+  },
+  {
+    id: 'mkt', short: 'MKT', title: 'Marketing', base: '/mkt', perm: 'module.mkt', needsProject: false,
+    sections: [
+      { label: 'Sales', items: [
+        { to: '/mkt', label: 'Lead pipeline', icon: FolderKanban, end: true },
+        { to: '/mkt/email', label: 'Email outreach', icon: Mail },
+      ] },
+      { label: 'Management', items: [{ to: '/mkt/settings', label: 'Microsoft & stages', icon: SlidersHorizontal }] },
     ],
   },
 ]

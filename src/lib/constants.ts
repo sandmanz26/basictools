@@ -69,6 +69,9 @@ export const PERMISSIONS: { id: Permission; label: string; hint: string }[] = [
   { id: 'module.hr', label: 'Open HR module', hint: 'Hiring pipeline, talent pool, positions' },
   { id: 'module.pm', label: 'Open PM module', hint: 'Project dashboard, board, risks, budget' },
   { id: 'pm.edit', label: 'Edit project management data', hint: 'Tasks, milestones, risks, team, budget, updates' },
+  { id: 'module.mkt', label: 'Open Marketing module', hint: 'Lead pipeline, email outreach' },
+  { id: 'mkt.edit', label: 'Edit leads & templates', hint: 'Add, move and edit leads and email templates' },
+  { id: 'mkt.send', label: 'Send marketing email', hint: 'Send email through the connected Microsoft account' },
 ]
 
 export const idr = (n: number | null | undefined) =>
@@ -81,3 +84,14 @@ export const fmtDate = (d: string) => {
 }
 
 export const today = () => new Date().toISOString().slice(0, 10)
+
+export const DEFAULT_MKT_STAGES = (): Stage[] => [
+  { id: 'new', label: 'New lead', color: 'slate', type: 'active', interview: false, nextStep: '' },
+  { id: 'contacted', label: 'Contacted', color: 'sky', type: 'active', interview: false, nextStep: '' },
+  { id: 'qualified', label: 'Qualified', color: 'violet', type: 'active', interview: false, nextStep: '' },
+  { id: 'proposal', label: 'Proposal sent', color: 'amber', type: 'active', interview: false, nextStep: '' },
+  { id: 'negotiation', label: 'Negotiation', color: 'orange', type: 'active', interview: false, nextStep: '' },
+  { id: 'won', label: 'Won', color: 'green', type: 'won', interview: false, nextStep: '' },
+  { id: 'lost', label: 'Lost', color: 'red', type: 'lost', interview: false, nextStep: '' },
+]
+export const LEAD_SOURCES = ['Website', 'LinkedIn', 'Referral', 'Event', 'Cold outreach', 'Webinar', 'Instagram', 'Partner']

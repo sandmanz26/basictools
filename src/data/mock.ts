@@ -1,6 +1,8 @@
 import type {
   BudgetItem,
   Candidate,
+  EmailTemplate,
+  Lead,
   Member,
   Milestone,
   Permission,
@@ -28,7 +30,7 @@ export const ROLES: Role[] = [
     id: 'r-hr',
     name: 'HR Recruiter',
     description: 'Runs the pipeline day to day',
-    permissions: { ...allPerms(true), 'roles.manage': false, 'pm.edit': false },
+    permissions: { ...allPerms(true), 'roles.manage': false, 'pm.edit': false, 'module.mkt': false, 'mkt.edit': false, 'mkt.send': false },
   },
   {
     id: 'r-pm',
@@ -45,6 +47,12 @@ export const ROLES: Role[] = [
     permissions: { ...allPerms(false), 'positions.edit': true, 'tests.edit': true, 'salary.view': true, 'candidates.edit': true, 'module.hr': true },
   },
   {
+    id: 'r-mkt',
+    name: 'Marketing',
+    description: 'Runs the lead pipeline and email outreach',
+    permissions: { ...allPerms(false), 'module.mkt': true, 'mkt.edit': true, 'mkt.send': true },
+  },
+  {
     id: 'r-viewer',
     name: 'Viewer',
     description: 'Read only, salary hidden',
@@ -58,6 +66,7 @@ export const USERS: User[] = [
   { id: 'u3', name: 'Budi (Eng Manager)', email: 'budi@company.id', roleId: 'r-hm' },
   { id: 'u4', name: 'Dewi (Guest)', email: 'dewi@company.id', roleId: 'r-viewer' },
   { id: 'u5', name: 'Rina (PM)', email: 'rina@company.id', roleId: 'r-pm' },
+  { id: 'u6', name: 'Tika (Marketing)', email: 'tika@company.id', roleId: 'r-mkt' },
 ]
 
 export const PROJECTS: Project[] = [
@@ -294,4 +303,31 @@ export const UPDATES: StatusUpdate[] = [
   { id: 'su2', projectId: 'p1', date: '2026-11-04', author: 'Rina (PM)', health: 'at_risk', summary: 'Hiring pace is behind plan and design system v3 is trending late, putting Alpha at risk.',
     highlights: '- API v2 contract in review\n- Offer out for senior backend', blockers: '- Design system v3 slipping ~1 week\n- 2 backend roles still open', nextSteps: '- Decide on contractor fallback by Nov 15' },
   { id: 'su3', projectId: 'p2', date: '2026-11-03', author: 'Rina (PM)', health: 'on_track', summary: 'Panel scheduled; scorecard finished.', highlights: '- Scorecard done', blockers: '', nextSteps: '- Run portfolio review' },
+]
+
+const lead = (id: string, name: string, company: string, title: string, stage: string, value: number | null, source: string, extra: Partial<Lead> = {}): Lead => ({
+  id, name, company, title, email: `${name.split(' ')[0].toLowerCase()}@${company.toLowerCase().replace(/[^a-z]/g, '')}.co.id`, phone: '', source, stage, value,
+  owner: 'Tika (Marketing)', nextAction: '', nextActionDate: '', tags: '', notes: '', createdAt: '2026-10-20', lastContactAt: '', unsubscribed: false, ...extra,
+})
+
+export const LEADS: Lead[] = [
+  lead('l1', 'Andi Pratama', 'Nusantara Retail', 'Head of Digital', 'new', 250_000_000, 'Website', { tags: 'retail' }),
+  lead('l2', 'Maya Sari', 'Kopi Senja', 'Founder', 'new', 60_000_000, 'Instagram', { tags: 'fnb' }),
+  lead('l3', 'Rudi Hartono', 'Logistik Prima', 'CTO', 'contacted', 420_000_000, 'LinkedIn', { nextAction: 'Follow up demo request', nextActionDate: '2026-11-10', lastContactAt: '2026-11-03' }),
+  lead('l4', 'Lina Wijaya', 'Bank Mitra', 'VP Product', 'qualified', 900_000_000, 'Event', { nextAction: 'Prepare proposal', nextActionDate: '2026-11-12', lastContactAt: '2026-11-01', tags: 'finance, enterprise' }),
+  lead('l5', 'Dimas Aji', 'Edu Nusa', 'COO', 'proposal', 350_000_000, 'Referral', { nextAction: 'Chase proposal feedback', nextActionDate: '2026-11-08', lastContactAt: '2026-10-30' }),
+  lead('l6', 'Siska Putri', 'Sehat Selalu', 'Marketing Director', 'negotiation', 520_000_000, 'Webinar', { lastContactAt: '2026-11-04' }),
+  lead('l7', 'Fajar Nugroho', 'Agro Makmur', 'CEO', 'won', 280_000_000, 'Partner', { lastContactAt: '2026-10-25' }),
+  lead('l8', 'Wulan Dari', 'Travelku', 'Product Lead', 'lost', 150_000_000, 'Cold outreach', { notes: 'Went with an in-house build.', lastContactAt: '2026-10-18' }),
+]
+
+export const EMAIL_TEMPLATES: EmailTemplate[] = [
+  {
+    id: 'et1', name: 'Intro outreach', subject: 'Quick idea for {{company}}',
+    body: 'Hi {{firstName}},\n\nI came across {{company}} and thought we could help your team. Would you be open to a 15-minute call this week?\n\nBest regards,\n{{owner}}',
+  },
+  {
+    id: 'et2', name: 'Follow-up', subject: 'Following up, {{firstName}}',
+    body: 'Hi {{firstName}},\n\nJust checking in on my last note. Happy to share a short case study relevant to {{company}} if useful.\n\nBest regards,\n{{owner}}',
+  },
 ]
