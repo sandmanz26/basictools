@@ -19,7 +19,7 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-4xl space-y-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Roles & Settings</h1>
-          <p className="text-sm text-muted-foreground">Control who can edit job descriptions, tests, salary data and sharing. Switch “Viewing as” in the sidebar to try each role.</p>
+          <p className="text-sm text-muted-foreground">Control who can edit job descriptions, tests, salary data and sharing. Click your avatar (bottom left) to switch user and try each role.</p>
         </div>
         <Tabs defaultValue="roles">
           <TabsList>

@@ -66,6 +66,9 @@ export const PERMISSIONS: { id: Permission; label: string; hint: string }[] = [
   { id: 'projects.manage', label: 'Manage projects', hint: 'Create, rename, archive projects' },
   { id: 'share.manage', label: 'Manage share links', hint: 'Create public / password links' },
   { id: 'roles.manage', label: 'Manage roles', hint: 'Edit roles and permissions' },
+  { id: 'module.hr', label: 'Open HR module', hint: 'Hiring pipeline, talent pool, positions' },
+  { id: 'module.pm', label: 'Open PM module', hint: 'Project dashboard, board, risks, budget' },
+  { id: 'pm.edit', label: 'Edit project management data', hint: 'Tasks, milestones, risks, team, budget, updates' },
 ]
 
 export const idr = (n: number | null | undefined) =>

@@ -4,8 +4,10 @@ import { nanoid } from 'nanoid'
 import type {
   Candidate,
   Permission,
+  PMCollections,
   Position,
   Project,
+  ProjectInfo,
   Role,
   RoundKey,
   Stage,
@@ -16,7 +18,8 @@ import type {
   TestQuestion,
   User,
 } from '@/types'
-import { CANDIDATES, POSITIONS, PROJECTS, ROLES, TALENTS, USERS } from '@/data/mock'
+import { BUDGET, CANDIDATES, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
+import { DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
@@ -29,6 +32,12 @@ interface State {
   positions: Position[]
   candidates: Candidate[]
   talents: Talent[]
+  tasks: PMCollections['tasks']
+  milestones: PMCollections['milestones']
+  risks: PMCollections['risks']
+  members: PMCollections['members']
+  budget: PMCollections['budget']
+  updates: PMCollections['updates']
   roles: Role[]
   users: User[]
   shares: ShareLink[]
@@ -43,6 +52,12 @@ interface State {
   deleteProject: (id: string) => void
   duplicateProject: (id: string) => string
   setStages: (projectId: string, stages: Stage[]) => void
+  setPmStages: (projectId: string, stages: Stage[]) => void
+  removePmStage: (projectId: string, stageId: string, moveTo: string) => void
+  updateInfo: (projectId: string, patch: Partial<ProjectInfo>) => void
+  pmAdd: <K extends keyof PMCollections>(k: K, item: PMCollections[K][number]) => void
+  pmUpdate: <K extends keyof PMCollections>(k: K, id: string, patch: Partial<PMCollections[K][number]>) => void
+  pmDelete: <K extends keyof PMCollections>(k: K, id: string) => void
   removeStage: (projectId: string, stageId: string, moveTo: string) => void
 
   addCandidate: (c: Partial<Candidate>) => string
@@ -83,6 +98,12 @@ const seed = () => ({
   positions: POSITIONS,
   candidates: CANDIDATES,
   talents: TALENTS,
+  tasks: TASKS,
+  milestones: MILESTONES,
+  risks: RISKS,
+  members: MEMBERS,
+  budget: BUDGET,
+  updates: UPDATES,
   roles: ROLES,
   users: USERS,
   shares: [
@@ -134,7 +155,7 @@ export const useStore = create<State>()(
       addProject: (name, description) => {
         const id = 'p-' + nanoid(6)
         set((s) => ({
-          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES() }],
+          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), info: { ...DEFAULT_INFO(), startDate: today() } }],
           activeProjectId: id,
         }))
         return id
@@ -150,6 +171,12 @@ export const useStore = create<State>()(
             positions: s.positions.filter((p) => p.projectId !== id),
             candidates: s.candidates.filter((c) => c.projectId !== id),
             shares: s.shares.filter((x) => x.projectId !== id),
+            tasks: s.tasks.filter((x) => x.projectId !== id),
+            milestones: s.milestones.filter((x) => x.projectId !== id),
+            risks: s.risks.filter((x) => x.projectId !== id),
+            members: s.members.filter((x) => x.projectId !== id),
+            budget: s.budget.filter((x) => x.projectId !== id),
+            updates: s.updates.filter((x) => x.projectId !== id),
             activeProjectId: s.activeProjectId === id ? (projects.find((p) => p.status === 'active') ?? projects[0])?.id ?? '' : s.activeProjectId,
           }
         }),
@@ -158,7 +185,7 @@ export const useStore = create<State>()(
         set((s) => {
           const src = s.projects.find((p) => p.id === id)!
           return {
-            projects: [...s.projects, { ...src, id: nid, name: src.name + ' (copy)', status: 'active', createdAt: today(), stages: src.stages.map((x) => ({ ...x })) }],
+            projects: [...s.projects, { ...src, id: nid, name: src.name + ' (copy)', status: 'active', createdAt: today(), stages: src.stages.map((x) => ({ ...x })), pmStages: src.pmStages.map((x) => ({ ...x })), info: { ...src.info, stakeholders: src.info.stakeholders.map((x) => ({ ...x })) } }],
             positions: [
               ...s.positions,
               ...s.positions.filter((p) => p.projectId === id).map((p) => ({ ...p, id: 'pos-' + nanoid(6), projectId: nid, questions: p.questions.map((q) => ({ ...q, id: nanoid(6) })) })),
@@ -170,6 +197,20 @@ export const useStore = create<State>()(
       },
       setStages: (projectId, stages) =>
         set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, stages } : p)) })),
+      setPmStages: (projectId, stages) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmStages: stages } : p)) })),
+      removePmStage: (projectId, stageId, moveTo) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmStages: p.pmStages.filter((x) => x.id !== stageId) } : p)),
+          tasks: s.tasks.map((t) => (t.projectId === projectId && t.stage === stageId ? { ...t, stage: moveTo } : t)),
+        })),
+      updateInfo: (projectId, patch) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, info: { ...p.info, ...patch } } : p)) })),
+      // Generic CRUD for the PM collections (tasks, milestones, risks, members, budget, updates).
+      pmAdd: (k, item) => set((s) => ({ [k]: [...(s[k] as unknown[]), item] }) as Partial<State>),
+      pmUpdate: (k, id, patch) =>
+        set((s) => ({ [k]: (s[k] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...patch } : x)) }) as Partial<State>),
+      pmDelete: (k, id) => set((s) => ({ [k]: (s[k] as { id: string }[]).filter((x) => x.id !== id) }) as Partial<State>),
       removeStage: (projectId, stageId, moveTo) =>
         set((s) => {
           const target = stageById(stagesOf(s, projectId), moveTo)
@@ -384,7 +425,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v3' },
+    { name: 'hiring-pipeline-v4' },
   ),
 )
 

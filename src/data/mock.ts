@@ -1,16 +1,23 @@
 import type {
+  BudgetItem,
   Candidate,
+  Member,
+  Milestone,
   Permission,
   Position,
   Project,
+  Risk,
   Role,
   Round,
+  StatusUpdate,
+  Task,
   StageId,
   Talent,
   User,
   WorkArrangement,
 } from '@/types'
 import { DEFAULT_STAGES, PERMISSIONS } from '@/lib/constants'
+import { DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
 
 const allPerms = (v: boolean): Record<Permission, boolean> =>
   Object.fromEntries(PERMISSIONS.map((p) => [p.id, v])) as Record<Permission, boolean>
@@ -21,19 +28,27 @@ export const ROLES: Role[] = [
     id: 'r-hr',
     name: 'HR Recruiter',
     description: 'Runs the pipeline day to day',
-    permissions: { ...allPerms(true), 'roles.manage': false, 'projects.manage': false },
+    permissions: { ...allPerms(true), 'roles.manage': false, 'pm.edit': false },
+  },
+  {
+    id: 'r-pm',
+    name: 'Project Manager',
+    description: 'Runs delivery; sees hiring read-only',
+    permissions: {
+      ...allPerms(false), 'module.hr': true, 'module.pm': true, 'pm.edit': true, 'projects.manage': true, 'positions.edit': true,
+    },
   },
   {
     id: 'r-hm',
     name: 'Hiring Manager',
     description: 'Owns job descriptions and tests, views candidates',
-    permissions: { ...allPerms(false), 'positions.edit': true, 'tests.edit': true, 'salary.view': true, 'candidates.edit': true },
+    permissions: { ...allPerms(false), 'positions.edit': true, 'tests.edit': true, 'salary.view': true, 'candidates.edit': true, 'module.hr': true },
   },
   {
     id: 'r-viewer',
     name: 'Viewer',
     description: 'Read only, salary hidden',
-    permissions: allPerms(false),
+    permissions: { ...allPerms(false), 'module.hr': true, 'module.pm': true },
   },
 ]
 
@@ -42,11 +57,31 @@ export const USERS: User[] = [
   { id: 'u2', name: 'Sari (HR)', email: 'sari@company.id', roleId: 'r-hr' },
   { id: 'u3', name: 'Budi (Eng Manager)', email: 'budi@company.id', roleId: 'r-hm' },
   { id: 'u4', name: 'Dewi (Guest)', email: 'dewi@company.id', roleId: 'r-viewer' },
+  { id: 'u5', name: 'Rina (PM)', email: 'rina@company.id', roleId: 'r-pm' },
 ]
 
 export const PROJECTS: Project[] = [
-  { id: 'p1', name: 'Engineering Q4 2026', description: 'Product engineering hiring for the Q4 roadmap', status: 'active', createdAt: '2026-09-15', stages: DEFAULT_STAGES() },
-  { id: 'p2', name: 'Design & Product 2026', description: 'Design team expansion', status: 'active', createdAt: '2026-10-01', stages: DEFAULT_STAGES() },
+  { id: 'p1', name: 'Engineering Q4 2026', description: 'Product engineering hiring for the Q4 roadmap', status: 'active', createdAt: '2026-09-15', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(),
+    info: {
+      ...DEFAULT_INFO(), health: 'at_risk', phase: 'execution', methodology: 'Agile', priority: 'high', sponsor: 'Rina (CTO)', manager: 'Rina (PM)',
+      client: 'Internal – Product', startDate: '2026-10-01', endDate: '2027-02-26', budget: 1_800_000_000,
+      objectives: '- Ship Customer Portal v2 to all enterprise customers\n- Cut support tickets about self-service by 30%\n- Build the core engineering team for 2027',
+      scopeIn: '- Web portal (React)\n- Public API v2\n- SSO and role-based access\n- QA automation', scopeOut: '- Native mobile apps\n- Legacy portal migration tooling',
+      successCriteria: '- 95% of enterprise customers onboarded by end Feb\n- p95 page load under 2s\n- Zero critical bugs at launch',
+      assumptions: '- Design system v3 is ready by end Nov\n- Hiring for 5 engineers closes by mid Dec',
+      stakeholders: [
+        { id: 'sh1', name: 'Rina', role: 'CTO / Sponsor', influence: 'high', contact: 'rina@company.id' },
+        { id: 'sh2', name: 'Anton', role: 'Head of Customer Success', influence: 'medium', contact: 'anton@company.id' },
+        { id: 'sh3', name: 'Mira', role: 'Finance Business Partner', influence: 'medium', contact: 'mira@company.id' },
+      ],
+    } },
+  { id: 'p2', name: 'Design & Product 2026', description: 'Design team expansion', status: 'active', createdAt: '2026-10-01', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(),
+    info: {
+      ...DEFAULT_INFO(), health: 'on_track', phase: 'planning', methodology: 'Hybrid', priority: 'medium', sponsor: 'Nina (Design Lead)', manager: 'Rina (PM)',
+      client: 'Internal – Design', startDate: '2026-10-15', endDate: '2027-03-31', budget: 650_000_000,
+      objectives: '- Establish a product design and product management function', scopeIn: '- Hiring\n- Design ops setup\n- Research toolkit', scopeOut: '- Brand refresh',
+      successCriteria: '- Both roles filled by end Jan', assumptions: '', stakeholders: [{ id: 'sh4', name: 'Nina', role: 'Design Lead', influence: 'high', contact: 'nina@company.id' }],
+    } },
 ]
 
 export const POSITIONS: Position[] = [
@@ -187,4 +222,76 @@ export const TALENTS: Talent[] = [
   pool('t102', 'Siti Aisyah', 'Referral', 'Go, PostgreSQL, Kafka', 28_000_000, 'WFO'),
   pool('t103', 'Tommy Hartono', 'Headhunter', 'Figma, UX research, design systems', 18_000_000, 'Hybrid'),
   pool('t104', 'Wulan Sari', 'Website', 'Playwright, Cypress, API testing', 11_000_000, 'WFH'),
+]
+
+// ---------- PM seed data ----------
+const T = (id: string, projectId: string, title: string, stage: string, assignee: string, priority: Task['priority'], startDate: string, dueDate: string, estimateH: number | null, milestoneId = '', labels = ''): Task =>
+  ({ id, projectId, title, description: '', stage, assignee, priority, startDate, dueDate, estimateH, milestoneId, labels })
+
+export const TASKS: Task[] = [
+  T('k1', 'p1', 'Finalise portal architecture', 'done', 'Budi', 'high', '2026-10-01', '2026-10-15', 24, 'm1', 'architecture'),
+  T('k2', 'p1', 'Design system v3 handoff', 'doing', 'Nina', 'critical', '2026-10-20', '2026-11-20', 60, 'm2', 'design'),
+  T('k3', 'p1', 'Auth & SSO service', 'doing', 'Andi', 'high', '2026-10-25', '2026-11-30', 80, 'm2', 'backend'),
+  T('k4', 'p1', 'Customer dashboard UI', 'todo', 'Citra', 'medium', '2026-11-10', '2026-12-15', 100, 'm2', 'frontend'),
+  T('k5', 'p1', 'Public API v2 contract', 'review', 'Gita', 'high', '2026-10-28', '2026-11-12', 30, 'm2', 'backend'),
+  T('k6', 'p1', 'E2E test suite (Playwright)', 'backlog', '', 'medium', '2026-12-01', '2027-01-15', 60, 'm3', 'qa'),
+  T('k7', 'p1', 'Load testing & performance budget', 'backlog', '', 'medium', '2027-01-05', '2027-01-25', 40, 'm3', 'qa'),
+  T('k8', 'p1', 'Pilot rollout to 5 customers', 'backlog', 'Anton', 'high', '2027-01-10', '2027-02-05', 50, 'm4', 'rollout'),
+  T('k9', 'p1', 'Hiring: close 5 engineering roles', 'doing', 'Sari', 'critical', '2026-10-01', '2026-12-15', null, 'm2', 'hiring'),
+  T('k10', 'p1', 'Security review & pen test', 'todo', 'Budi', 'high', '2026-12-10', '2027-01-10', 40, 'm3', 'security'),
+  T('k11', 'p2', 'Define Product Designer scorecard', 'done', 'Nina', 'medium', '2026-10-15', '2026-10-25', 8, 'm5'),
+  T('k12', 'p2', 'Portfolio review panel', 'doing', 'Nina', 'high', '2026-11-01', '2026-11-20', 16, 'm5'),
+  T('k13', 'p2', 'Set up research repository', 'todo', 'Rina (PM)', 'low', '2026-12-01', '2027-01-15', 20, 'm6'),
+  T('k14', 'p2', 'Onboarding plan for new hires', 'backlog', 'Sari', 'medium', '2027-01-05', '2027-02-15', 12, 'm6'),
+]
+
+const M = (id: string, projectId: string, title: string, date: string, status: Milestone['status'], owner: string): Milestone => ({ id, projectId, title, date, status, owner, notes: '' })
+export const MILESTONES: Milestone[] = [
+  M('m1', 'p1', 'Architecture approved', '2026-10-15', 'done', 'Budi'),
+  M('m2', 'p1', 'Alpha: core flows usable', '2026-12-18', 'upcoming', 'Rina (PM)'),
+  M('m3', 'p1', 'Beta: QA & security sign-off', '2027-01-25', 'upcoming', 'Budi'),
+  M('m4', 'p1', 'Pilot customers live', '2027-02-05', 'upcoming', 'Anton'),
+  M('m5', 'p2', 'Hiring panel complete', '2026-11-30', 'upcoming', 'Nina'),
+  M('m6', 'p2', 'Design ops ready', '2027-01-31', 'upcoming', 'Rina (PM)'),
+]
+
+const R = (id: string, projectId: string, kind: Risk['kind'], title: string, probability: number, impact: number, status: Risk['status'], owner: string, mitigation: string, dueDate = ''): Risk =>
+  ({ id, projectId, kind, title, probability, impact, status, owner, mitigation, dueDate })
+export const RISKS: Risk[] = [
+  R('r1', 'p1', 'risk', 'Backend hiring slips past mid-December', 4, 4, 'mitigating', 'Sari', 'Use headhunter for senior backend; open contractor budget as fallback.', '2026-12-01'),
+  R('r2', 'p1', 'risk', 'Design system v3 delivered late', 3, 4, 'open', 'Nina', 'Weekly sync; start UI work on v2 tokens and migrate later.', '2026-11-25'),
+  R('r3', 'p1', 'issue', 'SSO provider sandbox is down intermittently', 5, 2, 'open', 'Andi', 'Escalated to vendor; local mock IdP in the meantime.', '2026-11-10'),
+  R('r4', 'p1', 'risk', 'Pilot customers unavailable during holidays', 2, 3, 'open', 'Anton', 'Confirm pilot calendar with customers by Dec 15.', '2026-12-15'),
+  R('r5', 'p2', 'risk', 'Strong design candidates decline due to salary band', 3, 3, 'open', 'Sari', 'Review band with Finance after panel feedback.', '2026-12-10'),
+]
+
+const MB = (id: string, projectId: string, name: string, role: string, allocation: number, startDate: string, endDate: string): Member =>
+  ({ id, projectId, name, role, email: name.toLowerCase().replace(/[^a-z]+/g, '.') + '@company.id', allocation, startDate, endDate })
+export const MEMBERS: Member[] = [
+  MB('mb1', 'p1', 'Rina (PM)', 'Project Manager', 60, '2026-10-01', '2027-02-26'),
+  MB('mb2', 'p1', 'Budi', 'Tech Lead', 70, '2026-10-01', '2027-02-26'),
+  MB('mb3', 'p1', 'Andi', 'Backend Engineer', 100, '2026-10-20', '2027-02-26'),
+  MB('mb4', 'p1', 'Nina', 'Design Lead', 40, '2026-10-01', '2026-12-31'),
+  MB('mb5', 'p1', 'Sari', 'HR Recruiter', 30, '2026-10-01', '2026-12-31'),
+  MB('mb6', 'p2', 'Rina (PM)', 'Project Manager', 20, '2026-10-15', '2027-03-31'),
+  MB('mb7', 'p2', 'Nina', 'Design Lead', 30, '2026-10-15', '2027-03-31'),
+]
+
+const B = (id: string, projectId: string, category: string, description: string, planned: number, actual: number): BudgetItem => ({ id, projectId, category, description, planned, actual })
+export const BUDGET: BudgetItem[] = [
+  B('b1', 'p1', 'People', 'Engineering salaries (project share)', 900_000_000, 270_000_000),
+  B('b2', 'p1', 'Recruitment', 'Headhunter fees & job boards', 180_000_000, 60_000_000),
+  B('b3', 'p1', 'Infrastructure', 'Cloud, CI, observability', 260_000_000, 55_000_000),
+  B('b4', 'p1', 'Tools & licences', 'Figma, Jira, SSO provider', 120_000_000, 48_000_000),
+  B('b5', 'p1', 'Security', 'Pen test and compliance review', 150_000_000, 0),
+  B('b6', 'p2', 'Recruitment', 'Design & product hiring', 120_000_000, 18_000_000),
+  B('b7', 'p2', 'Tools & licences', 'Research and prototyping tools', 80_000_000, 22_000_000),
+]
+
+export const UPDATES: StatusUpdate[] = [
+  { id: 'su1', projectId: 'p1', date: '2026-10-30', author: 'Rina (PM)', health: 'on_track', summary: 'Architecture approved; engineering kicked off on auth and API contract.',
+    highlights: '- Architecture signed off by CTO\n- 3 of 5 engineering roles in interview stage', blockers: '- SSO sandbox flaky', nextSteps: '- Design system v3 handoff\n- Close backend offers' },
+  { id: 'su2', projectId: 'p1', date: '2026-11-04', author: 'Rina (PM)', health: 'at_risk', summary: 'Hiring pace is behind plan and design system v3 is trending late, putting Alpha at risk.',
+    highlights: '- API v2 contract in review\n- Offer out for senior backend', blockers: '- Design system v3 slipping ~1 week\n- 2 backend roles still open', nextSteps: '- Decide on contractor fallback by Nov 15' },
+  { id: 'su3', projectId: 'p2', date: '2026-11-03', author: 'Rina (PM)', health: 'on_track', summary: 'Panel scheduled; scorecard finished.', highlights: '- Scorecard done', blockers: '', nextSteps: '- Run portfolio review' },
 ]

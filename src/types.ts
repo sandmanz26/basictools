@@ -91,7 +91,9 @@ export interface Project {
   description: string
   status: 'active' | 'archived'
   createdAt: string
-  stages: Stage[]
+  stages: Stage[] // HR hiring pipeline
+  pmStages: Stage[] // PM work board workflow (separate from HR)
+  info: ProjectInfo
 }
 
 export type Permission =
@@ -103,6 +105,9 @@ export type Permission =
   | 'projects.manage'
   | 'share.manage'
   | 'roles.manage'
+  | 'module.hr'
+  | 'module.pm'
+  | 'pm.edit'
 
 export interface Role {
   id: string
@@ -131,4 +136,116 @@ export interface ShareLink {
   enabled: boolean
   createdAt: string
   views: number
+}
+
+// ---------- Project management (PM) ----------
+
+export type Health = 'on_track' | 'at_risk' | 'off_track' | 'on_hold' | 'done'
+export type Phase = 'initiation' | 'planning' | 'execution' | 'monitoring' | 'closing'
+export type Priority = 'low' | 'medium' | 'high' | 'critical'
+
+export interface Stakeholder {
+  id: string
+  name: string
+  role: string
+  influence: 'low' | 'medium' | 'high'
+  contact: string
+}
+
+export interface ProjectInfo {
+  health: Health
+  phase: Phase
+  methodology: 'Agile' | 'Waterfall' | 'Hybrid'
+  priority: Priority
+  sponsor: string
+  manager: string
+  client: string
+  startDate: string
+  endDate: string
+  budget: number | null // IDR
+  objectives: string
+  scopeIn: string
+  scopeOut: string
+  successCriteria: string
+  assumptions: string
+  stakeholders: Stakeholder[]
+}
+
+export interface Task {
+  id: string
+  projectId: string
+  title: string
+  description: string
+  stage: string // id in project.pmStages
+  assignee: string
+  priority: Priority
+  startDate: string
+  dueDate: string
+  estimateH: number | null
+  milestoneId: string
+  labels: string
+}
+
+export interface Milestone {
+  id: string
+  projectId: string
+  title: string
+  date: string
+  status: 'upcoming' | 'done' | 'missed'
+  owner: string
+  notes: string
+}
+
+export interface Risk {
+  id: string
+  projectId: string
+  kind: 'risk' | 'issue'
+  title: string
+  probability: number // 1-5
+  impact: number // 1-5
+  status: 'open' | 'mitigating' | 'closed'
+  owner: string
+  mitigation: string
+  dueDate: string
+}
+
+export interface Member {
+  id: string
+  projectId: string
+  name: string
+  role: string
+  email: string
+  allocation: number // % of time
+  startDate: string
+  endDate: string
+}
+
+export interface BudgetItem {
+  id: string
+  projectId: string
+  category: string
+  description: string
+  planned: number
+  actual: number
+}
+
+export interface StatusUpdate {
+  id: string
+  projectId: string
+  date: string
+  author: string
+  health: Health
+  summary: string
+  highlights: string
+  blockers: string
+  nextSteps: string
+}
+
+export interface PMCollections {
+  tasks: Task[]
+  milestones: Milestone[]
+  risks: Risk[]
+  members: Member[]
+  budget: BudgetItem[]
+  updates: StatusUpdate[]
 }
