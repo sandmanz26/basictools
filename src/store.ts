@@ -6,6 +6,7 @@ import type {
   Candidate,
   Invoice,
   EmailTemplate,
+  FieldDef,
   Lead,
   MsConfig,
   SentEmail,
@@ -28,7 +29,7 @@ import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTON
 import { DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
-import { DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
+import { DEFAULT_LEAD_COLUMNS, DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
 
 export interface ImportOpts { onDuplicate: 'skip' | 'update'; createPositions: boolean }
 export interface ImportSummary { added: number; updated: number; skipped: number; newTalents: number; newPositions: number }
@@ -49,6 +50,8 @@ interface State {
   shares: ShareLink[]
   leads: Lead[]
   mktStages: Stage[]
+  mktFields: FieldDef[]
+  mktColumns: string[]
   templates: EmailTemplate[]
   emails: SentEmail[]
   invoices: Invoice[]
@@ -58,6 +61,9 @@ interface State {
   activeProjectId: string
 
   setMktStages: (stages: Stage[]) => void
+  setMktFields: (fields: FieldDef[]) => void
+  setMktColumns: (cols: string[]) => void
+  importLeads: (records: Partial<Lead>[], onDuplicate: 'skip' | 'update') => { added: number; updated: number; skipped: number }
   removeMktStage: (stageId: string, moveTo: string) => void
   addLead: (l?: Partial<Lead>) => string
   updateLead: (id: string, patch: Partial<Lead>) => void
@@ -149,6 +155,8 @@ const seed = () => ({
   ],
   leads: LEADS,
   mktStages: DEFAULT_MKT_STAGES(),
+  mktFields: [] as FieldDef[],
+  mktColumns: DEFAULT_LEAD_COLUMNS,
   templates: EMAIL_TEMPLATES,
   emails: [] as SentEmail[],
   invoices: INVOICES,
@@ -188,6 +196,45 @@ export const useStore = create<State>()(
     (set, get) => ({
       ...seed(),
       setMktStages: (stages) => set({ mktStages: stages }),
+      setMktFields: (fields) => set((s) => ({
+        mktFields: fields,
+        mktColumns: s.mktColumns.filter((k) => !k.startsWith('cf:') || fields.some((f) => 'cf:' + f.id === k)),
+      })),
+      setMktColumns: (cols) => set({ mktColumns: cols }),
+      importLeads: (records, onDuplicate) => {
+        const sum = { added: 0, updated: 0, skipped: 0 }
+        set((s) => {
+          let leads = [...s.leads]
+          const byEmail = new Map(leads.filter((l) => l.email).map((l) => [l.email.trim().toLowerCase(), l.id]))
+          const fresh: Lead[] = []
+          for (const r of records) {
+            const key = (r.email ?? '').trim().toLowerCase()
+            const hit = key ? byEmail.get(key) : undefined
+            if (hit) {
+              if (onDuplicate === 'skip') { sum.skipped++; continue }
+              leads = leads.map((l) => {
+                if (l.id !== hit) return l
+                const next = { ...l }
+                for (const [k, v] of Object.entries(r)) if (k !== 'custom' && k !== 'id' && v !== '' && v != null) (next as Record<string, unknown>)[k] = v
+                next.custom = { ...(l.custom ?? {}), ...Object.fromEntries(Object.entries(r.custom ?? {}).filter(([, v]) => v !== '')) }
+                return next
+              })
+              sum.updated++
+            } else {
+              const l: Lead = {
+                id: 'l-' + nanoid(6), name: '', company: '', title: '', email: '', phone: '', source: 'Import', stage: s.mktStages[0]?.id ?? '', value: null,
+                owner: s.users.find((u) => u.id === s.currentUserId)?.name ?? '', nextAction: '', nextActionDate: '', tags: '', notes: '',
+                createdAt: today(), lastContactAt: '', unsubscribed: false, custom: {}, ...r,
+              }
+              fresh.push(l)
+              if (key) byEmail.set(key, l.id)
+              sum.added++
+            }
+          }
+          return { leads: [...fresh, ...leads] }
+        })
+        return sum
+      },
       removeMktStage: (stageId, moveTo) =>
         set((s) => ({ mktStages: s.mktStages.filter((x) => x.id !== stageId), leads: s.leads.map((l) => (l.stage === stageId ? { ...l, stage: moveTo } : l)) })),
       addLead: (l) => {
@@ -498,7 +545,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v6' },
+    { name: 'hiring-pipeline-v7' },
   ),
 )
 

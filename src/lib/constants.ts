@@ -96,3 +96,13 @@ export const DEFAULT_MKT_STAGES = (): Stage[] => [
   { id: 'lost', label: 'Lost', color: 'red', type: 'lost', interview: false, nextStep: '' },
 ]
 export const LEAD_SOURCES = ['Website', 'LinkedIn', 'Referral', 'Event', 'Cold outreach', 'Webinar', 'Instagram', 'Partner']
+
+/** Built-in lead columns. Custom fields are added as `cf:<id>`. */
+export const LEAD_BUILTIN_COLUMNS: { key: string; label: string }[] = [
+  { key: 'company', label: 'Company' }, { key: 'name', label: 'Contact' }, { key: 'title', label: 'Job title' },
+  { key: 'email', label: 'Email' }, { key: 'phone', label: 'Phone' }, { key: 'stage', label: 'Stage' },
+  { key: 'value', label: 'Value (Rp)' }, { key: 'source', label: 'Source' }, { key: 'owner', label: 'Owner' },
+  { key: 'tags', label: 'Tags' }, { key: 'nextAction', label: 'Next action' }, { key: 'nextActionDate', label: 'Due' },
+  { key: 'lastContactAt', label: 'Last contact' }, { key: 'createdAt', label: 'Created' }, { key: 'notes', label: 'Notes' },
+]
+export const DEFAULT_LEAD_COLUMNS = ['company', 'name', 'email', 'stage', 'value', 'source', 'nextAction', 'nextActionDate']

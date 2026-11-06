@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CalendarDays, Columns3, Mail, Plus, Search, Table2, Trash2 } from 'lucide-react'
+import { CalendarDays, Columns3, Download, Mail, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,18 +10,22 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { NativeSelect } from '@/components/NativeSelect'
 import { NumberCell, SelectCell, TextCell } from '@/components/pipeline/cells'
 import { ComposeDialog } from '@/components/mkt/ComposeDialog'
+import { ColumnManager } from '@/components/mkt/ColumnManager'
+import { LeadImportDialog } from '@/components/mkt/LeadImportDialog'
 import { PageHeader } from '@/components/pm/ui'
 import { useCan, useStore } from '@/store'
-import { LEAD_SOURCES, fmtDate, idr, stageDot, stageTone, today } from '@/lib/constants'
+import { LEAD_BUILTIN_COLUMNS, LEAD_SOURCES, fmtDate, idr, stageDot, stageTone, today } from '@/lib/constants'
+import { downloadCsv } from '@/lib/csv'
+import { leadsToTable } from '@/lib/leadsIO'
 import { cn } from '@/lib/utils'
-import type { Lead } from '@/types'
+import type { FieldDef, Lead } from '@/types'
 
 const th = 'border-b border-r bg-muted px-2 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground'
 const td = 'border-b border-r p-0 align-middle'
 const jt = (n: number) => (n >= 1e9 ? (n / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' M' : (n / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt')
 
 export default function MktPipeline() {
-  const { leads, mktStages: stages, addLead, updateLead, deleteLead } = useStore()
+  const { leads, mktStages: stages, mktFields, mktColumns, addLead, updateLead, deleteLead } = useStore()
   const canEdit = useCan()('mkt.edit')
   const canSend = useCan()('mkt.send')
   const [view, setView] = useState<'board' | 'list'>('board')
@@ -31,6 +35,8 @@ export default function MktPipeline() {
   const [over, setOver] = useState<string | null>(null)
   const [dragId, setDragId] = useState<string | null>(null)
   const [compose, setCompose] = useState<string[] | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [columnsOpen, setColumnsOpen] = useState(false)
   const t = today()
 
   const rows = useMemo(() => leads.filter((l) =>
@@ -39,6 +45,28 @@ export default function MktPipeline() {
   const stageOpts = stages.map((x) => ({ value: x.id, label: x.label }))
   const sourceOpts = LEAD_SOURCES.map((x) => ({ value: x, label: x }))
   const upd = (id: string, p: Partial<Lead>) => updateLead(id, p)
+  const setCustom = (l: Lead, f: FieldDef, v: string) => updateLead(l.id, { custom: { ...(l.custom ?? {}), [f.id]: v } })
+  const cols = mktColumns
+    .map((k) => (k.startsWith('cf:') ? (() => { const f = mktFields.find((x) => 'cf:' + x.id === k); return f ? { key: k, label: f.label, field: f } : null })() : (() => { const c = LEAD_BUILTIN_COLUMNS.find((x) => x.key === k); return c ? { key: k, label: c.label, field: undefined } : null })()))
+    .filter((c): c is { key: string; label: string; field: FieldDef | undefined } => !!c)
+  const exportCsv = () => downloadCsv(`leads-${today()}.csv`, leadsToTable(rows, stages, mktFields))
+  const cell = (l: Lead, key: string, field?: FieldDef) => {
+    const ro = !canEdit
+    if (field) {
+      const v = l.custom?.[field.id] ?? ''
+      if (field.type === 'select') return <SelectCell value={v} readOnly={ro} options={[{ value: '', label: '—' }, ...field.options.split(',').map((x) => x.trim()).filter(Boolean).map((x) => ({ value: x, label: x }))]} onChange={(n) => setCustom(l, field, n)} />
+      if (field.type === 'number') return <NumberCell value={v === '' || isNaN(Number(v)) ? null : Number(v)} readOnly={ro} onCommit={(n) => setCustom(l, field, n == null ? '' : String(n))} />
+      return <TextCell type={field.type === 'date' ? 'date' : 'text'} value={v} readOnly={ro} onCommit={(n) => setCustom(l, field, n)} />
+    }
+    switch (key) {
+      case 'stage': return <SelectCell value={l.stage} options={stageOpts} readOnly={ro} tone={stageTone(stages.find((x) => x.id === l.stage))} onChange={(v) => upd(l.id, { stage: v })} />
+      case 'source': return <SelectCell value={l.source} options={sourceOpts} readOnly={ro} onChange={(v) => upd(l.id, { source: v })} />
+      case 'value': return <NumberCell value={l.value} readOnly={ro} onCommit={(v) => upd(l.id, { value: v })} />
+      case 'nextActionDate': case 'lastContactAt': case 'createdAt': return <TextCell type="date" value={l[key]} readOnly={ro} onCommit={(v) => upd(l.id, { [key]: v })} />
+      case 'company': return <TextCell value={l.company} readOnly={ro} className="font-medium" onCommit={(v) => upd(l.id, { company: v })} />
+      default: return <TextCell value={String(l[key as keyof Lead] ?? '')} readOnly={ro} onCommit={(v) => upd(l.id, { [key]: v })} />
+    }
+  }
   const add = (stage?: string) => setOpenId(addLead(stage ? { stage } : {}))
 
   const openValue = rows.filter((l) => stages.find((s) => s.id === l.stage)?.type === 'active').reduce((a, l) => a + (l.value ?? 0), 0)
@@ -49,7 +77,11 @@ export default function MktPipeline() {
       <PageHeader
         title="Lead pipeline"
         desc="Track prospects from first touch to closed deal. Send email to a lead straight from its card."
-        actions={canEdit && <Button onClick={() => add()}><Plus /> New lead</Button>}
+        actions={<>
+          <Button variant="outline" onClick={exportCsv}><Download /> Export ({rows.length})</Button>
+          {canEdit && <Button variant="outline" onClick={() => setImporting(true)}><Upload /> Import</Button>}
+          {canEdit && <Button onClick={() => add()}><Plus /> New lead</Button>}
+        </>}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -64,6 +96,7 @@ export default function MktPipeline() {
           <Input className="h-8 w-56 pl-8" placeholder="Search leads…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <NativeSelect value={source} onChange={setSource} options={[{ value: '', label: 'All sources' }, ...sourceOpts]} />
+        {view === 'list' && <Button variant="outline" size="sm" onClick={() => setColumnsOpen(true)}><SlidersHorizontal /> Columns</Button>}
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {rows.length} leads · open {jt(openValue)} · won {jt(wonValue)}
         </span>
@@ -130,29 +163,21 @@ export default function MktPipeline() {
             <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
               <thead className="sticky top-0 z-10">
                 <tr>
-                  <th className={cn(th, 'w-44')}>Company</th><th className={cn(th, 'w-40')}>Contact</th><th className={cn(th, 'w-52')}>Email</th>
-                  <th className={cn(th, 'w-40')}>Stage</th><th className={cn(th, 'w-36')}>Value (Rp)</th><th className={cn(th, 'w-36')}>Source</th>
-                  <th className={cn(th, 'w-56')}>Next action</th><th className={cn(th, 'w-32')}>Due</th><th className="w-20 border-b bg-muted" />
+                  {cols.map((c) => <th key={c.key} className={cn(th, c.key === 'notes' || c.key === 'nextAction' ? 'w-56' : 'w-40')}>{c.label}</th>)}
+                  <th className="w-20 border-b bg-muted" />
                 </tr>
               </thead>
               <tbody>
                 {rows.map((l) => (
                   <tr key={l.id} className="hover:bg-muted/30">
-                    <td className={td}><TextCell value={l.company} readOnly={!canEdit} className="font-medium" onCommit={(v) => upd(l.id, { company: v })} /></td>
-                    <td className={td}><TextCell value={l.name} readOnly={!canEdit} onCommit={(v) => upd(l.id, { name: v })} /></td>
-                    <td className={td}><TextCell value={l.email} readOnly={!canEdit} onCommit={(v) => upd(l.id, { email: v })} /></td>
-                    <td className={td}><SelectCell value={l.stage} options={stageOpts} readOnly={!canEdit} tone={stageTone(stages.find((x) => x.id === l.stage))} onChange={(v) => upd(l.id, { stage: v })} /></td>
-                    <td className={td}><NumberCell value={l.value} readOnly={!canEdit} onCommit={(v) => upd(l.id, { value: v })} /></td>
-                    <td className={td}><SelectCell value={l.source} options={sourceOpts} readOnly={!canEdit} onChange={(v) => upd(l.id, { source: v })} /></td>
-                    <td className={td}><TextCell value={l.nextAction} readOnly={!canEdit} onCommit={(v) => upd(l.id, { nextAction: v })} /></td>
-                    <td className={td}><TextCell type="date" value={l.nextActionDate} readOnly={!canEdit} onCommit={(v) => upd(l.id, { nextActionDate: v })} /></td>
+                    {cols.map((c) => <td key={c.key} className={td}>{cell(l, c.key, c.field)}</td>)}
                     <td className="border-b p-0 text-center">
                       <Button variant="ghost" size="icon-xs" title="Details" onClick={() => setOpenId(l.id)}><Search /></Button>
                       {canEdit && <Button variant="ghost" size="icon-xs" onClick={() => confirm('Delete this lead?') && deleteLead(l.id)}><Trash2 className="text-destructive" /></Button>}
                     </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={9} className="py-16 text-center text-sm text-muted-foreground">No leads match.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={cols.length + 1} className="py-16 text-center text-sm text-muted-foreground">No leads match.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -187,6 +212,18 @@ export default function MktPipeline() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Next action</Label><Input disabled={!canEdit} value={open.nextAction} onChange={(e) => upd(open.id, { nextAction: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Due</Label><Input disabled={!canEdit} type="date" value={open.nextActionDate} onChange={(e) => upd(open.id, { nextActionDate: e.target.value })} /></div>
                 </div>
+                {mktFields.length > 0 && (
+                  <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                    {mktFields.map((f) => (
+                      <div key={f.id} className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">{f.label}</Label>
+                        {f.type === 'select'
+                          ? <NativeSelect disabled={!canEdit} className="w-full" value={open.custom?.[f.id] ?? ''} onChange={(v) => setCustom(open, f, v)} options={[{ value: '', label: '—' }, ...f.options.split(',').map((x) => x.trim()).filter(Boolean).map((x) => ({ value: x, label: x }))]} />
+                          : <Input disabled={!canEdit} type={f.type} value={open.custom?.[f.id] ?? ''} onChange={(e) => setCustom(open, f, e.target.value)} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="space-y-1"><Label className="text-xs text-muted-foreground">Notes</Label><Textarea disabled={!canEdit} rows={4} value={open.notes} onChange={(e) => upd(open.id, { notes: e.target.value })} /></div>
                 <label className="flex items-center gap-2 text-sm"><Switch disabled={!canEdit} checked={open.unsubscribed} onCheckedChange={(v) => upd(open.id, { unsubscribed: v })} /> Unsubscribed (never email this lead)</label>
                 {canEdit && <Button variant="outline" onClick={() => { deleteLead(open.id); setOpenId(null) }}><Trash2 className="text-destructive" /> Delete lead</Button>}
@@ -196,6 +233,8 @@ export default function MktPipeline() {
         </SheetContent>
       </Sheet>
 
+      <LeadImportDialog open={importing} onOpenChange={setImporting} />
+      <ColumnManager open={columnsOpen} onOpenChange={setColumnsOpen} canEdit={canEdit} />
       <ComposeDialog open={!!compose} onClose={() => setCompose(null)} leadIds={compose ?? []} />
     </div>
   )

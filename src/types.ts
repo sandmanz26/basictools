@@ -83,6 +83,21 @@ export interface Position {
   description: string
   requirements: string
   questions: TestQuestion[]
+  testFiles?: TestFile[] // uploaded PDF test papers (file bytes live in IndexedDB, see lib/files.ts)
+  formLinks?: FormLink[] // external forms HR uses to collect candidate data
+}
+
+export interface TestFile {
+  id: string
+  name: string
+  size: number
+  uploadedAt: string
+}
+
+export interface FormLink {
+  id: string
+  label: string
+  url: string
 }
 
 export interface Project {
@@ -275,6 +290,14 @@ export interface Lead {
   createdAt: string
   lastContactAt: string
   unsubscribed: boolean
+  custom?: Record<string, string> // values of user-defined fields, keyed by FieldDef.id
+}
+
+export interface FieldDef {
+  id: string
+  label: string
+  type: 'text' | 'number' | 'date' | 'select'
+  options: string // comma separated, for type 'select'
 }
 
 export interface EmailTemplate {

@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { NativeSelect } from '@/components/NativeSelect'
+import { TestMaterials } from '@/components/TestMaterials'
+import { deleteFile } from '@/lib/files'
 import { cn } from '@/lib/utils'
 import { useCan, useStore } from '@/store'
 import { ARRANGEMENTS, LEVELS } from '@/lib/constants'
@@ -48,13 +50,14 @@ export default function PositionsPage() {
           <div className="mx-auto max-w-3xl space-y-5">
             <div className="flex items-start gap-3">
               <Input disabled={!canJd} value={pos.title} onChange={(e) => updatePosition(pos.id, { title: e.target.value })} className="h-10 border-0 px-0 text-xl font-semibold shadow-none focus-visible:ring-0" />
-              {canJd && <Button variant="ghost" size="icon" onClick={() => { if (confirm('Delete this position?')) { deletePosition(pos.id); setSel(null) } }}><Trash2 className="text-destructive" /></Button>}
+              {canJd && <Button variant="ghost" size="icon" onClick={() => { if (confirm('Delete this position?')) { (pos.testFiles ?? []).forEach((f) => void deleteFile(f.id).catch(() => {})); deletePosition(pos.id); setSel(null) } }}><Trash2 className="text-destructive" /></Button>}
             </div>
             {!canJd && !canTest && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Your role has read-only access here.</div>}
             <Tabs defaultValue="jd">
               <TabsList>
                 <TabsTrigger value="jd">Job description</TabsTrigger>
                 <TabsTrigger value="tests">Test questions ({pos.questions.length})</TabsTrigger>
+                <TabsTrigger value="materials">PDF & form links ({(pos.testFiles?.length ?? 0) + (pos.formLinks?.length ?? 0)})</TabsTrigger>
               </TabsList>
               <TabsContent value="jd" className="space-y-4 pt-4">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -83,6 +86,7 @@ export default function PositionsPage() {
                 )}
                 {pos.questions.length > 0 && <div className="text-xs text-muted-foreground">Total weight: {pos.questions.reduce((a, q) => a + q.weight, 0)} (pass mark in the table is 65)</div>}
               </TabsContent>
+              <TabsContent value="materials" className="pt-4"><TestMaterials pos={pos} canEdit={canTest} /></TabsContent>
             </Tabs>
           </div>
         )}

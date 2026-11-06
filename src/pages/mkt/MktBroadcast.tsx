@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { nanoid } from 'nanoid'
-import { Info, Pause, Play, RotateCcw, Send, Trash2, TriangleAlert } from 'lucide-react'
+import { Info, Search, Pause, Play, RotateCcw, Send, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -33,6 +33,9 @@ export default function MktBroadcast() {
   const [source, setSource] = useState('')
   const [owner, setOwner] = useState('')
   const [tag, setTag] = useState('')
+  const [q, setQ] = useState('')
+  const [contact, setContact] = useState('')
+  const [listQ, setListQ] = useState('')
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
   const [tplId, setTplId] = useState('')
   const [subject, setSubject] = useState('')
@@ -44,11 +47,16 @@ export default function MktBroadcast() {
   const owners = useMemo(() => [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(), [leads])
   const matched = useMemo(() => leads.filter((l) =>
     (stageSel.size === 0 || stageSel.has(l.stage)) && (!source || l.source === source) && (!owner || l.owner === owner) &&
-    (!tag.trim() || l.tags.toLowerCase().split(',').some((t) => t.trim() === tag.trim().toLowerCase()))), [leads, stageSel, source, owner, tag])
+    (!tag.trim() || l.tags.toLowerCase().split(',').some((t) => t.trim() === tag.trim().toLowerCase())) &&
+    (!contact || (contact === 'never' ? !l.lastContactAt : !!l.lastContactAt)) &&
+    (!q.trim() || `${l.name} ${l.company} ${l.title} ${l.email} ${l.tags}`.toLowerCase().includes(q.trim().toLowerCase()))), [leads, stageSel, source, owner, tag, q, contact])
   const valid = matched.filter((l) => l.email.includes('@') && !l.unsubscribed)
   const noEmail = matched.filter((l) => !l.email.includes('@')).length
   const unsub = matched.filter((l) => l.unsubscribed).length
   const recipients = valid.filter((l) => !excluded.has(l.id))
+  const shown = listQ.trim() ? valid.filter((l) => `${l.name} ${l.company} ${l.email}`.toLowerCase().includes(listQ.trim().toLowerCase())) : valid
+  const anyFilter = stageSel.size > 0 || !!(source || owner || tag.trim() || q.trim() || contact)
+  const resetFilters = () => { setStageSel(new Set()); setSource(''); setOwner(''); setTag(''); setQ(''); setContact(''); setExcluded(new Set()) }
 
   const used24h = emails.filter((e) => e.status === 'sent' && Date.now() - Date.parse(e.sentAt) < 864e5).length
   const afterRun = used24h + recipients.length
@@ -58,7 +66,7 @@ export default function MktBroadcast() {
   const first = recipients[0]
   const filterLabel = [
     stageSel.size ? `stage: ${[...stageSel].map((id) => mktStages.find((s) => s.id === id)?.label ?? id).join(', ')}` : 'all stages',
-    source && `source: ${source}`, owner && `owner: ${owner}`, tag.trim() && `tag: ${tag.trim()}`, excluded.size && `${excluded.size} unticked`,
+    q.trim() && `search: “${q.trim()}”`, contact && (contact === 'never' ? 'never contacted' : 'already contacted'), source && `source: ${source}`, owner && `owner: ${owner}`, tag.trim() && `tag: ${tag.trim()}`, excluded.size && `${excluded.size} unticked`,
   ].filter(Boolean).join(' · ')
 
   const toggleStage = (id: string) => { setStageSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }); setExcluded(new Set()) }
@@ -113,27 +121,39 @@ export default function MktBroadcast() {
                   {stageSel.size > 0 && <button className="text-xs text-muted-foreground underline" onClick={() => { setStageSel(new Set()); setExcluded(new Set()) }}>clear</button>}
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input className="h-8 w-56 pl-8" placeholder="Search name, company, email…" value={q} onChange={(e) => { setQ(e.target.value); setExcluded(new Set()) }} />
+                  </div>
+                  <NativeSelect value={contact} onChange={(v) => { setContact(v); setExcluded(new Set()) }} options={[{ value: '', label: 'Any contact history' }, { value: 'never', label: 'Never contacted' }, { value: 'contacted', label: 'Already contacted' }]} />
                   <NativeSelect value={source} onChange={(v) => { setSource(v); setExcluded(new Set()) }} options={[{ value: '', label: 'Any source' }, ...sources.map((x) => ({ value: x, label: x }))]} />
                   <NativeSelect value={owner} onChange={(v) => { setOwner(v); setExcluded(new Set()) }} options={[{ value: '', label: 'Any owner' }, ...owners.map((x) => ({ value: x, label: x }))]} />
                   <Input className="h-8 w-40" placeholder="Tag, e.g. enterprise" value={tag} onChange={(e) => { setTag(e.target.value); setExcluded(new Set()) }} />
+                  {anyFilter && <Button variant="ghost" size="sm" onClick={resetFilters}>Reset filters</Button>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <b className="tabular-nums">{recipients.length}</b> will receive it
                   <span className="text-xs text-muted-foreground">· {matched.length} match{noEmail > 0 && ` · ${noEmail} skipped (no email)`}{unsub > 0 && ` · ${unsub} skipped (unsubscribed)`}</span>
                   <span className="ml-auto flex gap-1.5">
-                    <Button variant="outline" size="xs" onClick={() => setExcluded(new Set())}>Tick all</Button>
-                    <Button variant="outline" size="xs" onClick={() => setExcluded(new Set(valid.map((l) => l.id)))}>Untick all</Button>
+                    <Button variant="outline" size="xs" onClick={() => setExcluded((x) => { const n = new Set(x); shown.forEach((l) => n.delete(l.id)); return n })}>Tick {listQ.trim() ? 'shown' : 'all'}</Button>
+                    <Button variant="outline" size="xs" onClick={() => setExcluded((x) => { const n = new Set(x); shown.forEach((l) => n.add(l.id)); return n })}>Untick {listQ.trim() ? 'shown' : 'all'}</Button>
                   </span>
                 </div>
+                {valid.length > 8 && (
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input className="h-8 pl-8" placeholder="Find someone in this list to untick…" value={listQ} onChange={(e) => setListQ(e.target.value)} />
+                  </div>
+                )}
                 <div className="max-h-52 overflow-y-auto rounded-lg border">
-                  {valid.map((l) => (
+                  {shown.map((l) => (
                     <label key={l.id} className="flex cursor-pointer items-center gap-2 border-b px-2.5 py-1.5 text-sm last:border-0 hover:bg-muted/50">
                       <input type="checkbox" checked={!excluded.has(l.id)} onChange={() => toggle(l.id)} />
                       <span className="min-w-0 flex-1 truncate">{l.name}<span className="text-muted-foreground"> · {l.company}</span></span>
                       <span className="hidden text-xs text-muted-foreground sm:inline">{l.email}</span>
                     </label>
                   ))}
-                  {valid.length === 0 && <div className="p-4 text-center text-sm text-muted-foreground">No sendable leads match these filters.</div>}
+                  {shown.length === 0 && <div className="p-4 text-center text-sm text-muted-foreground">No sendable leads match these filters.</div>}
                 </div>
               </div>
             </Card>
