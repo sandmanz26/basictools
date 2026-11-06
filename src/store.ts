@@ -132,6 +132,8 @@ interface State {
   togglePermission: (roleId: string, p: Permission) => void
   addRole: (name: string) => void
   updateUser: (id: string, patch: Partial<User>) => void
+  addUser: (u: User) => void
+  deleteUser: (id: string) => void
 
   addShare: (s: Omit<ShareLink, 'id' | 'createdAt' | 'views'>) => string
   updateShare: (id: string, patch: Partial<ShareLink>) => void
@@ -561,6 +563,8 @@ export const useStore = create<State>()(
             { id: 'r-' + nanoid(5), name, description: '', permissions: Object.fromEntries(Object.keys(s.roles[0].permissions).map((k) => [k, false])) as Role['permissions'] },
           ],
         })),
+      addUser: (u) => set((s) => ({ users: [...s.users, u] })),
+      deleteUser: (id) => set((s) => ({ users: s.users.filter((u) => u.id !== id) })),
       updateUser: (id, patch) => set((s) => ({ users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) })),
 
       addShare: (sh) => {
@@ -571,7 +575,8 @@ export const useStore = create<State>()(
       updateShare: (id, patch) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       deleteShare: (id) => set((s) => ({ shares: s.shares.filter((x) => x.id !== id) })),
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
-      reset: () => set(seed()),
+      // Keep whoever is signed in; registered users are re-added so nobody gets locked out.
+      reset: () => set((s) => ({ ...seed(), currentUserId: s.currentUserId, users: [...USERS, ...s.users.filter((u) => !USERS.some((d) => d.id === u.id))] })),
     }),
     { name: 'hiring-pipeline-v8' },
   ),

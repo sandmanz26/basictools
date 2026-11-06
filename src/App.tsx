@@ -1,4 +1,5 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppShell } from '@/components/layout/AppShell'
 import PortfolioPage from '@/pages/PortfolioPage'
@@ -26,8 +27,24 @@ import MktPipeline from '@/pages/mkt/MktPipeline'
 import MktEmail from '@/pages/mkt/MktEmail'
 import MktBroadcast from '@/pages/mkt/MktBroadcast'
 import MktSettings from '@/pages/mkt/MktSettings'
+import LoginPage from '@/pages/auth/LoginPage'
+import RegisterPage from '@/pages/auth/RegisterPage'
+import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
+import { useAuth, useSessionUser } from '@/auth'
 import { useStore, useCan } from '@/store'
 import type { Permission, PmFeature } from '@/types'
+
+/** Everything except login/register/share links needs a valid session. */
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const user = useSessionUser()
+  const hasSession = useAuth((s) => !!s.session)
+  const logout = useAuth((s) => s.logout)
+  const loc = useLocation()
+  // Expired session, or the account was disabled/deleted: clear it.
+  useEffect(() => { if (hasSession && !user) logout() }, [hasSession, user, logout])
+  if (!user) return <Navigate to="/login" replace state={{ from: loc.pathname + loc.search }} />
+  return <>{children}</>
+}
 
 /** Redirect to the portfolio when the current role can't open a module. */
 function Guard({ perm, children }: { perm: Permission; children: React.ReactNode }) {
@@ -48,7 +65,10 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/s/:token" element={<SharePage />} />
-          <Route element={<AppShell />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route element={<RequireAuth><AppShell /></RequireAuth>}>
             <Route index element={<Navigate to="/projects" replace />} />
             <Route path="projects" element={<PortfolioPage />} />
             <Route path="projects/manage" element={<ProjectsPage />} />

@@ -136,11 +136,15 @@ export interface Role {
   permissions: Record<Permission, boolean>
 }
 
+export type UserStatus = 'active' | 'pending' | 'disabled'
+
 export interface User {
   id: string
   name: string
   email: string
   roleId: string
+  /** Missing means active (accounts created before login existed). */
+  status?: UserStatus
 }
 
 export interface ShareLink {

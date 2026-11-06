@@ -6,8 +6,9 @@ import {
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
 import { useBillingAlerts } from '@/lib/alerts'
+import { useAuth } from '@/auth'
 import { NativeSelect } from '@/components/NativeSelect'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Permission, PmFeature } from '@/types'
 
 interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean; feature?: PmFeature | 'any' }
@@ -81,7 +82,8 @@ export function AppShell() {
   const { pathname } = useLocation()
   const nav = useNavigate()
   const can = useCan()
-  const { projects, activeProjectId, setProject, users, setUser, currentUserId } = useStore()
+  const { projects, activeProjectId, setProject } = useStore()
+  const logout = useAuth((s) => s.logout)
   const { user, role } = useCurrentUser()
   const billingAlerts = useBillingAlerts()
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
@@ -127,15 +129,15 @@ export function AppShell() {
               {initials}
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" className="min-w-56">
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">Viewing as · {role.name}</div>
-              <DropdownMenuRadioGroup value={currentUserId} onValueChange={(v) => setUser(v as string)}>
-                {users.map((u) => (
-                  <DropdownMenuRadioItem key={u.id} value={u.id}>{u.name}</DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+              <div className="px-2 py-1.5">
+                <div className="text-sm font-medium">{user.name}</div>
+                <div className="text-xs text-muted-foreground">{user.email} · {role.name}</div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => nav('/settings?tab=account')}><Settings /> Account & password</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { logout(); nav('/login', { replace: true }) }}><LogOut /> Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <LogOut className="hidden" />
         </div>
       </aside>
 
