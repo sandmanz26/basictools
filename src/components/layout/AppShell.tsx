@@ -1,10 +1,11 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
+import { useBillingAlerts } from '@/lib/alerts'
 import { NativeSelect } from '@/components/NativeSelect'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Permission, PmFeature } from '@/types'
@@ -47,6 +48,7 @@ export const MODULES: Module[] = [
     sections: [
       { label: 'Overview', items: [
         { to: '/pm', label: 'All projects', icon: LayoutGrid, end: true },
+        { to: '/pm/billing', label: 'Billing & reminders', icon: BellRing },
       ] },
       { label: 'Selected project', items: [
         { to: '/pm/info', label: 'Project info', icon: Info },
@@ -81,6 +83,7 @@ export function AppShell() {
   const can = useCan()
   const { projects, activeProjectId, setProject, users, setUser, currentUserId } = useStore()
   const { user, role } = useCurrentUser()
+  const billingAlerts = useBillingAlerts()
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
   const visible = MODULES.filter((m) => !m.perm || can(m.perm))
   const features = (projects.find((p) => p.id === activeProjectId) ?? projects[0])?.pmFeatures
@@ -103,11 +106,14 @@ export function AppShell() {
               title={m.title}
               onClick={() => nav(m.base)}
               className={cn(
-                'grid h-11 w-12 place-items-center rounded-xl text-[13px] font-bold transition-colors',
+                'relative grid h-11 w-12 place-items-center rounded-xl text-[13px] font-bold transition-colors',
                 current?.id === m.id ? 'bg-primary/10 text-foreground ring-2 ring-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70',
               )}
             >
               {m.short}
+              {m.id === 'pm' && billingAlerts > 0 && (
+                <span title={`${billingAlerts} billing items need action`} className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] leading-4 font-semibold text-white">{billingAlerts}</span>
+              )}
             </button>
           ))}
         </div>

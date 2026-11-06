@@ -5,6 +5,8 @@ import type {
   Broadcast,
   Candidate,
   Invoice,
+  Schedule,
+  ScheduleEvent,
   EmailTemplate,
   FieldDef,
   Lead,
@@ -25,6 +27,7 @@ import type {
   TestQuestion,
   User,
 } from '@/types'
+import { SCHEDULES } from '@/data/mock'
 import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
 import { DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
@@ -55,6 +58,8 @@ interface State {
   templates: EmailTemplate[]
   emails: SentEmail[]
   invoices: Invoice[]
+  schedules: Schedule[]
+  scheduleEvents: Record<string, ScheduleEvent>
   broadcasts: Broadcast[]
   msConfig: MsConfig
   currentUserId: string
@@ -71,6 +76,11 @@ interface State {
   upsertTemplate: (t: EmailTemplate) => void
   deleteTemplate: (id: string) => void
   logEmail: (e: SentEmail) => void
+  addSchedule: (s: Schedule) => void
+  updateSchedule: (id: string, patch: Partial<Schedule>) => void
+  deleteSchedule: (id: string) => void
+  setScheduleEvent: (key: string, patch: Partial<ScheduleEvent> | null) => void
+  importSchedules: (list: Schedule[]) => void
   addInvoice: (i: Invoice) => void
   updateInvoice: (id: string, patch: Partial<Invoice>) => void
   deleteInvoice: (id: string) => void
@@ -160,6 +170,8 @@ const seed = () => ({
   templates: EMAIL_TEMPLATES,
   emails: [] as SentEmail[],
   invoices: INVOICES,
+  schedules: SCHEDULES,
+  scheduleEvents: {} as Record<string, ScheduleEvent>,
   broadcasts: [] as Broadcast[],
   msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
   currentUserId: 'u1',
@@ -256,6 +268,22 @@ export const useStore = create<State>()(
           emails: [e, ...s.emails].slice(0, 2000),
           leads: e.status === 'sent' ? s.leads.map((l) => (l.id === e.leadId ? { ...l, lastContactAt: e.sentAt.slice(0, 10) } : l)) : s.leads,
         })),
+      addSchedule: (x) => set((s) => ({ schedules: [x, ...s.schedules] })),
+      updateSchedule: (id, patch) => set((s) => ({ schedules: s.schedules.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      deleteSchedule: (id) => set((s) => ({
+        schedules: s.schedules.filter((x) => x.id !== id),
+        scheduleEvents: Object.fromEntries(Object.entries(s.scheduleEvents).filter(([k]) => !k.startsWith(id + ':'))),
+      })),
+      setScheduleEvent: (key, patch) => set((s) => {
+        const next = { ...s.scheduleEvents }
+        if (patch === null) delete next[key]
+        else {
+          const prev: Partial<ScheduleEvent> = next[key] ?? {}
+          next[key] = { issuedAt: '', invoiceNo: '', paidAt: '', skipped: false, ...prev, ...patch }
+        }
+        return { scheduleEvents: next }
+      }),
+      importSchedules: (list) => set((s) => ({ schedules: [...list, ...s.schedules] })),
       addInvoice: (i) => set((s) => ({ invoices: [i, ...s.invoices] })),
       updateInvoice: (id, patch) => set((s) => ({ invoices: s.invoices.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       deleteInvoice: (id) => set((s) => ({ invoices: s.invoices.filter((x) => x.id !== id) })),
@@ -545,7 +573,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v7' },
+    { name: 'hiring-pipeline-v8' },
   ),
 )
 

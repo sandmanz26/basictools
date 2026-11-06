@@ -365,3 +365,34 @@ export interface Broadcast {
   finishedAt: string
   createdBy: string
 }
+
+// ---------- Billing schedules & reminders ----------
+
+export type Frequency = 'once' | 'monthly' | 'quarterly' | 'yearly'
+
+/** Something that repeats on a calendar: an invoice we must release to a client, or a bill we must pay a vendor. */
+export interface Schedule {
+  id: string
+  kind: 'receivable' | 'payable'
+  projectId: string // '' for company-wide payables
+  party: string // client (receivable) or vendor (payable)
+  title: string
+  amount: number | null // IDR, expected amount
+  frequency: Frequency
+  day: number // 1-31, or 0 = last day of the month
+  startDate: string // first occurrence is on/after this date
+  endDate: string // '' = open ended
+  leadDays: number // start reminding this many days before the date
+  termDays: number // receivable: days the client has to pay after we release the invoice
+  pic: string
+  notes: string
+  active: boolean
+}
+
+/** Progress of one occurrence of a schedule. Keyed by `${scheduleId}:${yyyy-mm-dd}` in the store. */
+export interface ScheduleEvent {
+  issuedAt: string // receivable: date the invoice was released
+  invoiceNo: string
+  paidAt: string // receivable: date money came in; payable: date we paid
+  skipped: boolean
+}

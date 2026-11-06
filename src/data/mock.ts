@@ -4,6 +4,7 @@ import type {
   Invoice,
   EmailTemplate,
   Lead,
+  Schedule,
   Member,
   Milestone,
   Permission,
@@ -337,4 +338,17 @@ export const INVOICES: Invoice[] = [
   { id: 'inv1', projectId: 'p1', number: 'INV-2026-001', clientName: 'Anton', clientEmail: 'anton@company.id', issueDate: '2026-10-05', dueDate: '2026-10-20', items: [{ id: 'ii1', description: 'Customer Portal v2 - milestone 1', qty: 1, unitPrice: 250_000_000 }], taxPct: 11, status: 'paid', notes: '', sentAt: '2026-10-05T03:00:00.000Z' },
   { id: 'inv2', projectId: 'p1', number: 'INV-2026-002', clientName: 'Anton', clientEmail: 'anton@company.id', issueDate: '2026-10-28', dueDate: '2026-11-04', items: [{ id: 'ii2', description: 'Customer Portal v2 - milestone 2', qty: 1, unitPrice: 300_000_000 }], taxPct: 11, status: 'sent', notes: 'Payment to BCA 123-456-789.', sentAt: '2026-10-28T03:00:00.000Z' },
   { id: 'inv3', projectId: 'p2', number: 'INV-2026-003', clientName: 'Nina', clientEmail: 'nina@company.id', issueDate: '2026-11-03', dueDate: '2026-11-30', items: [{ id: 'ii3', description: 'Design system audit', qty: 2, unitPrice: 45_000_000 }], taxPct: 11, status: 'draft', notes: '', sentAt: '' },
+]
+
+const sch = (id: string, kind: Schedule['kind'], projectId: string, party: string, title: string, amount: number, frequency: Schedule['frequency'], day: number, extra: Partial<Schedule> = {}): Schedule => ({
+  id, kind, projectId, party, title, amount, frequency, day, startDate: '2026-09-01', endDate: '', leadDays: kind === 'receivable' ? 5 : 3, termDays: 14,
+  pic: 'Rina (PM)', notes: '', active: true, ...extra,
+})
+
+export const SCHEDULES: Schedule[] = [
+  sch('sc1', 'receivable', 'p1', 'Internal – Product', 'Monthly retainer invoice', 150_000_000, 'monthly', 0, { startDate: '2026-10-01', endDate: '2027-02-26' }),
+  sch('sc2', 'receivable', 'p2', 'Daiwa', 'Mid-month service invoice', 85_000_000, 'monthly', 15, { startDate: '2026-10-01', pic: 'Sari (HR)' }),
+  sch('sc3', 'payable', '', 'Accurate', 'Accounting software subscription', 4_500_000, 'monthly', 5, { leadDays: 3 }),
+  sch('sc4', 'payable', '', 'Mekari Talenta', 'Payroll & HR subscription', 12_000_000, 'monthly', 25, { leadDays: 5, pic: 'Sari (HR)' }),
+  sch('sc5', 'payable', '', 'Mekari Sign', 'e-Sign package', 6_000_000, 'quarterly', 10, { startDate: '2026-09-10', leadDays: 7 }),
 ]

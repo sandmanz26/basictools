@@ -13,6 +13,7 @@ import PipelineSettingsPage from '@/pages/hr/PipelineSettingsPage'
 import PmOverview from '@/pages/pm/PmOverview'
 import PmProjects from '@/pages/pm/PmProjects'
 import PmInvoices from '@/pages/pm/PmInvoices'
+import PmBilling from '@/pages/pm/PmBilling'
 import PmInfo from '@/pages/pm/PmInfo'
 import PmBoard from '@/pages/pm/PmBoard'
 import PmTimeline from '@/pages/pm/PmTimeline'
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="pm" element={<Guard perm="module.pm"><PmProjects /></Guard>} />
             <Route path="pm/dashboard" element={<Guard perm="module.pm"><Feature id="any"><PmOverview /></Feature></Guard>} />
             <Route path="pm/info" element={<Guard perm="module.pm"><PmInfo /></Guard>} />
+            <Route path="pm/billing" element={<Guard perm="module.pm"><PmBilling /></Guard>} />
             <Route path="pm/invoices" element={<Guard perm="module.pm"><PmInvoices /></Guard>} />
             <Route path="pm/updates" element={<Guard perm="module.pm"><Feature id="updates"><PmUpdates /></Feature></Guard>} />
             <Route path="pm/board" element={<Guard perm="module.pm"><Feature id="board"><PmBoard /></Feature></Guard>} />
