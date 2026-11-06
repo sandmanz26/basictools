@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { nanoid } from 'nanoid'
 import type {
+  Broadcast,
   Candidate,
+  Invoice,
   EmailTemplate,
   Lead,
   MsConfig,
@@ -22,8 +24,8 @@ import type {
   TestQuestion,
   User,
 } from '@/types'
-import { BUDGET, CANDIDATES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
-import { DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
+import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
+import { DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
@@ -49,6 +51,8 @@ interface State {
   mktStages: Stage[]
   templates: EmailTemplate[]
   emails: SentEmail[]
+  invoices: Invoice[]
+  broadcasts: Broadcast[]
   msConfig: MsConfig
   currentUserId: string
   activeProjectId: string
@@ -61,6 +65,14 @@ interface State {
   upsertTemplate: (t: EmailTemplate) => void
   deleteTemplate: (id: string) => void
   logEmail: (e: SentEmail) => void
+  addInvoice: (i: Invoice) => void
+  updateInvoice: (id: string, patch: Partial<Invoice>) => void
+  deleteInvoice: (id: string) => void
+  setPmFeature: (projectId: string, feature: keyof Project['pmFeatures'], on: boolean) => void
+  addBroadcast: (b: Broadcast) => void
+  updateBroadcast: (id: string, patch: Partial<Broadcast>) => void
+  setBroadcastRecipient: (id: string, leadId: string, status: 'pending' | 'sent' | 'failed') => void
+  deleteBroadcast: (id: string) => void
   setMsConfig: (patch: Partial<MsConfig>) => void
 
   setUser: (id: string) => void
@@ -139,6 +151,8 @@ const seed = () => ({
   mktStages: DEFAULT_MKT_STAGES(),
   templates: EMAIL_TEMPLATES,
   emails: [] as SentEmail[],
+  invoices: INVOICES,
+  broadcasts: [] as Broadcast[],
   msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
   currentUserId: 'u1',
   activeProjectId: 'p1',
@@ -192,9 +206,19 @@ export const useStore = create<State>()(
       deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((x) => x.id !== id) })),
       logEmail: (e) =>
         set((s) => ({
-          emails: [e, ...s.emails].slice(0, 500),
+          emails: [e, ...s.emails].slice(0, 2000),
           leads: e.status === 'sent' ? s.leads.map((l) => (l.id === e.leadId ? { ...l, lastContactAt: e.sentAt.slice(0, 10) } : l)) : s.leads,
         })),
+      addInvoice: (i) => set((s) => ({ invoices: [i, ...s.invoices] })),
+      updateInvoice: (id, patch) => set((s) => ({ invoices: s.invoices.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      deleteInvoice: (id) => set((s) => ({ invoices: s.invoices.filter((x) => x.id !== id) })),
+      setPmFeature: (projectId, feature, on) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: { ...p.pmFeatures, [feature]: on } } : p)) })),
+      addBroadcast: (b) => set((s) => ({ broadcasts: [b, ...s.broadcasts] })),
+      updateBroadcast: (id, patch) => set((s) => ({ broadcasts: s.broadcasts.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      setBroadcastRecipient: (id, leadId, status) =>
+        set((s) => ({ broadcasts: s.broadcasts.map((x) => (x.id === id ? { ...x, recipients: { ...x.recipients, [leadId]: status } } : x)) })),
+      deleteBroadcast: (id) => set((s) => ({ broadcasts: s.broadcasts.filter((x) => x.id !== id) })),
       setMsConfig: (patch) => set((s) => ({ msConfig: { ...s.msConfig, ...patch } })),
 
       setUser: (id) => set({ currentUserId: id }),
@@ -203,7 +227,7 @@ export const useStore = create<State>()(
       addProject: (name, description) => {
         const id = 'p-' + nanoid(6)
         set((s) => ({
-          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), info: { ...DEFAULT_INFO(), startDate: today() } }],
+          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: NO_FEATURES(), info: { ...DEFAULT_INFO(), startDate: today() } }],
           activeProjectId: id,
         }))
         return id
@@ -225,6 +249,7 @@ export const useStore = create<State>()(
             members: s.members.filter((x) => x.projectId !== id),
             budget: s.budget.filter((x) => x.projectId !== id),
             updates: s.updates.filter((x) => x.projectId !== id),
+            invoices: s.invoices.filter((x) => x.projectId !== id),
             activeProjectId: s.activeProjectId === id ? (projects.find((p) => p.status === 'active') ?? projects[0])?.id ?? '' : s.activeProjectId,
           }
         }),
@@ -473,7 +498,7 @@ export const useStore = create<State>()(
       bumpShare: (id) => set((s) => ({ shares: s.shares.map((x) => (x.id === id ? { ...x, views: x.views + 1 } : x)) })),
       reset: () => set(seed()),
     }),
-    { name: 'hiring-pipeline-v5' },
+    { name: 'hiring-pipeline-v6' },
   ),
 )
 

@@ -1,4 +1,4 @@
-import type { Health, Phase, Priority, ProjectInfo, Stage } from '@/types'
+import type { Health, Invoice, InvoiceStatus, Phase, PmFeature, Priority, ProjectInfo, Stage } from '@/types'
 
 export const HEALTH: Record<Health, { label: string; tone: string; dot: string }> = {
   on_track: { label: 'On track', tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300', dot: 'bg-emerald-500' },
@@ -54,3 +54,46 @@ export const money = (n: number | null | undefined) => {
 
 export const daysBetween = (a: string, b: string) => Math.round((new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000)
 export const todayStr = () => new Date().toISOString().slice(0, 10)
+
+export const PM_FEATURES: { id: PmFeature; label: string; hint: string; to: string }[] = [
+  { id: 'board', label: 'Work board', hint: 'Kanban tasks with its own workflow stages', to: '/pm/board' },
+  { id: 'timeline', label: 'Timeline', hint: 'Milestones and task schedule', to: '/pm/timeline' },
+  { id: 'risks', label: 'Risks & issues', hint: 'Risk register with probability and impact', to: '/pm/risks' },
+  { id: 'team', label: 'Team', hint: 'Members and allocation', to: '/pm/team' },
+  { id: 'budget', label: 'Budget', hint: 'Planned vs actual spend by category', to: '/pm/budget' },
+  { id: 'updates', label: 'Status updates', hint: 'Running log of project status', to: '/pm/updates' },
+]
+export const NO_FEATURES = (): Record<PmFeature, boolean> => ({ board: false, timeline: false, risks: false, team: false, budget: false, updates: false })
+export const ALL_FEATURES = (): Record<PmFeature, boolean> => ({ board: true, timeline: true, risks: true, team: true, budget: true, updates: true })
+
+// ---------- invoices ----------
+
+export const invoiceSubtotal = (i: Invoice) => i.items.reduce((a, x) => a + x.qty * x.unitPrice, 0)
+export const invoiceTax = (i: Invoice) => Math.round((invoiceSubtotal(i) * (i.taxPct || 0)) / 100)
+export const invoiceTotal = (i: Invoice) => invoiceSubtotal(i) + invoiceTax(i)
+
+/** A sent invoice past its due date counts as overdue. */
+export const effectiveStatus = (i: Invoice, today = todayStr()): InvoiceStatus =>
+  i.status === 'sent' && i.dueDate && i.dueDate < today ? 'overdue' : i.status
+
+export const INVOICE_STATUS: Record<InvoiceStatus, { label: string; tone: string }> = {
+  draft: { label: 'Draft', tone: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' },
+  sent: { label: 'Sent', tone: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+  paid: { label: 'Paid', tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' },
+  overdue: { label: 'Overdue', tone: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' },
+}
+
+/** Money still expected from the client: sent and overdue invoices. */
+export const outstanding = (list: Invoice[]) => list.filter((i) => i.status === 'sent').reduce((a, i) => a + invoiceTotal(i), 0)
+
+const fullIdr = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+const longDate = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '—')
+
+export function invoiceEmail(i: Invoice, projectName: string, sender: string): { subject: string; body: string } {
+  const lines = i.items.map((x) => `  - ${x.description} (${x.qty} x ${fullIdr(x.unitPrice)}) = ${fullIdr(x.qty * x.unitPrice)}`).join('\n')
+  const tax = i.taxPct ? `\nTax (${i.taxPct}%): ${fullIdr(invoiceTax(i))}` : ''
+  return {
+    subject: `Invoice ${i.number} - ${projectName}`,
+    body: `Dear ${i.clientName || 'Sir/Madam'},\n\nPlease find the invoice for ${projectName} below.\n\nInvoice: ${i.number}\nIssued: ${longDate(i.issueDate)}\nDue: ${longDate(i.dueDate)}\n\n${lines}\n\nSubtotal: ${fullIdr(invoiceSubtotal(i))}${tax}\nTotal due: ${fullIdr(invoiceTotal(i))}\n${i.notes ? `\n${i.notes}\n` : ''}\nThank you,\n${sender}`,
+  }
+}

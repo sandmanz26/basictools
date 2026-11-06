@@ -1,15 +1,15 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  Mail, Megaphone, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
+  Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
 import { NativeSelect } from '@/components/NativeSelect'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import type { Permission } from '@/types'
+import type { Permission, PmFeature } from '@/types'
 
-interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean }
+interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean; feature?: PmFeature | 'any' }
 interface Module {
   id: 'projects' | 'hr' | 'pm' | 'mkt'
   short: string
@@ -46,20 +46,20 @@ export const MODULES: Module[] = [
     id: 'pm', short: 'PM', title: 'Project Management', base: '/pm', perm: 'module.pm', needsProject: true,
     sections: [
       { label: 'Overview', items: [
-        { to: '/pm', label: 'Dashboard', icon: Gauge, end: true },
+        { to: '/pm', label: 'All projects', icon: LayoutGrid, end: true },
+      ] },
+      { label: 'Selected project', items: [
         { to: '/pm/info', label: 'Project info', icon: Info },
-        { to: '/pm/updates', label: 'Status updates', icon: Megaphone },
+        { to: '/pm/invoices', label: 'Invoices', icon: Receipt },
+        { to: '/pm/dashboard', label: 'Dashboard', icon: Gauge, feature: 'any' },
+        { to: '/pm/updates', label: 'Status updates', icon: Megaphone, feature: 'updates' },
+        { to: '/pm/board', label: 'Work board', icon: ClipboardList, feature: 'board' },
+        { to: '/pm/timeline', label: 'Timeline', icon: CalendarRange, feature: 'timeline' },
+        { to: '/pm/risks', label: 'Risks & issues', icon: ShieldAlert, feature: 'risks' },
+        { to: '/pm/team', label: 'Team', icon: UsersRound, feature: 'team' },
+        { to: '/pm/budget', label: 'Budget', icon: Wallet, feature: 'budget' },
       ] },
-      { label: 'Delivery', items: [
-        { to: '/pm/board', label: 'Work board', icon: ClipboardList },
-        { to: '/pm/timeline', label: 'Timeline', icon: CalendarRange },
-        { to: '/pm/risks', label: 'Risks & issues', icon: ShieldAlert },
-      ] },
-      { label: 'Resources', items: [
-        { to: '/pm/team', label: 'Team', icon: UsersRound },
-        { to: '/pm/budget', label: 'Budget', icon: Wallet },
-      ] },
-      { label: 'Management', items: [{ to: '/pm/settings', label: 'Workflow settings', icon: SlidersHorizontal }] },
+      { label: 'Management', items: [{ to: '/pm/settings', label: 'PM settings', icon: SlidersHorizontal }] },
     ],
   },
   {
@@ -68,6 +68,7 @@ export const MODULES: Module[] = [
       { label: 'Sales', items: [
         { to: '/mkt', label: 'Lead pipeline', icon: FolderKanban, end: true },
         { to: '/mkt/email', label: 'Email outreach', icon: Mail },
+        { to: '/mkt/broadcast', label: 'Broadcast', icon: Send },
       ] },
       { label: 'Management', items: [{ to: '/mkt/settings', label: 'Microsoft & stages', icon: SlidersHorizontal }] },
     ],
@@ -82,6 +83,9 @@ export function AppShell() {
   const { user, role } = useCurrentUser()
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
   const visible = MODULES.filter((m) => !m.perm || can(m.perm))
+  const features = (projects.find((p) => p.id === activeProjectId) ?? projects[0])?.pmFeatures
+  const shown = (n: NavItem) => !n.feature || (n.feature === 'any' ? !!features && Object.values(features).some(Boolean) : !!features?.[n.feature])
+  const sections = (current?.sections ?? []).map((sec) => ({ ...sec, items: sec.items.filter(shown) })).filter((sec) => sec.items.length)
   const initials = user.name.split(/[\s(]/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
 
   return (
@@ -144,7 +148,7 @@ export function AppShell() {
             )}
           </div>
           <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-            {current.sections.map((sec) => (
+            {sections.map((sec) => (
               <div key={sec.label} className="space-y-1">
                 <div className="px-2 pb-1 text-[11px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">{sec.label}</div>
                 {sec.items.map((n) => (

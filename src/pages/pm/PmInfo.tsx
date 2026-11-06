@@ -1,5 +1,6 @@
+import { useNavigate } from 'react-router-dom'
 import { nanoid } from 'nanoid'
-import { Plus, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -12,6 +13,7 @@ const opts = <T extends string>(o: Record<T, { label: string }>) => (Object.keys
 
 export default function PmInfo() {
   const { s, project, info, canEdit } = usePm()
+  const nav = useNavigate()
   const up = (p: Partial<ProjectInfo>) => s.updateInfo(project.id, p)
   const ro = !canEdit
   const setSh = (id: string, p: Partial<Stakeholder>) => up({ stakeholders: info.stakeholders.map((x) => (x.id === id ? { ...x, ...p } : x)) })
@@ -27,6 +29,13 @@ export default function PmInfo() {
       <div className="mx-auto max-w-5xl space-y-5">
         <PageHeader title="Project info" desc="The project charter: why it exists, what’s in and out, who’s involved. Visible to HR as well." />
         {ro && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Your role can view but not edit project management data.</div>}
+
+        <Card title="Project">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Project name"><Input disabled={ro} value={project.name} onChange={(e) => s.updateProject(project.id, { name: e.target.value })} /></Field>
+            <Field label="Description"><Input disabled={ro} value={project.description} onChange={(e) => s.updateProject(project.id, { description: e.target.value })} /></Field>
+          </div>
+        </Card>
 
         <Card title="Status & ownership">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -73,6 +82,18 @@ export default function PmInfo() {
             {info.stakeholders.length === 0 && <p className="text-sm text-muted-foreground">No stakeholders listed.</p>}
           </div>
         </Card>
+
+        {!ro && (
+          <Card title="Archive or delete">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={() => { s.updateProject(project.id, { status: project.status === 'active' ? 'archived' : 'active' }); if (project.status === 'active') nav('/pm') }}>
+                {project.status === 'active' ? <><Archive /> Archive project</> : <><ArchiveRestore /> Restore project</>}
+              </Button>
+              <Button variant="outline" onClick={() => { if (confirm(`Delete “${project.name}” and all its data (candidates, tasks, invoices…)? This can’t be undone.`)) { s.deleteProject(project.id); nav('/pm') } }}><Trash2 className="text-destructive" /> Delete project</Button>
+              <span className="text-xs text-muted-foreground">Archived projects drop out of the project pickers but keep their data.</span>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   )

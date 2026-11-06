@@ -94,6 +94,7 @@ export interface Project {
   stages: Stage[] // HR hiring pipeline
   pmStages: Stage[] // PM work board workflow (separate from HR)
   info: ProjectInfo
+  pmFeatures: Record<PmFeature, boolean> // optional PM tools, off by default
 }
 
 export type Permission =
@@ -108,6 +109,7 @@ export type Permission =
   | 'module.hr'
   | 'module.pm'
   | 'pm.edit'
+  | 'pm.invoice'
   | 'module.mkt'
   | 'mkt.edit'
   | 'mkt.send'
@@ -297,4 +299,46 @@ export interface SentEmail {
 export interface MsConfig {
   clientId: string
   tenant: string // 'common' | 'organizations' | tenant id
+}
+
+export type PmFeature = 'board' | 'timeline' | 'risks' | 'team' | 'budget' | 'updates'
+
+export type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue'
+
+export interface InvoiceItem {
+  id: string
+  description: string
+  qty: number
+  unitPrice: number // IDR
+}
+
+export interface Invoice {
+  id: string
+  projectId: string
+  number: string
+  clientName: string
+  clientEmail: string
+  issueDate: string // yyyy-mm-dd
+  dueDate: string
+  items: InvoiceItem[]
+  taxPct: number // e.g. 11 for PPN
+  status: InvoiceStatus // 'overdue' is derived from sent + past due, see effectiveStatus()
+  notes: string
+  sentAt: string // ISO, '' until sent
+}
+
+export type BroadcastStatus = 'running' | 'paused' | 'done'
+
+export interface Broadcast {
+  id: string
+  name: string
+  subject: string
+  body: string // raw, merge fields filled per recipient at send time
+  footer: boolean
+  audience: string // human readable description of the filters
+  recipients: Record<string, 'pending' | 'sent' | 'failed'> // by lead id
+  status: BroadcastStatus
+  createdAt: string // ISO
+  finishedAt: string
+  createdBy: string
 }

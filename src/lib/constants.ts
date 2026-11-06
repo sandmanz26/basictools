@@ -69,6 +69,7 @@ export const PERMISSIONS: { id: Permission; label: string; hint: string }[] = [
   { id: 'module.hr', label: 'Open HR module', hint: 'Hiring pipeline, talent pool, positions' },
   { id: 'module.pm', label: 'Open PM module', hint: 'Project dashboard, board, risks, budget' },
   { id: 'pm.edit', label: 'Edit project management data', hint: 'Tasks, milestones, risks, team, budget, updates' },
+  { id: 'pm.invoice', label: 'Manage & send invoices', hint: 'Create invoices and email them to clients' },
   { id: 'module.mkt', label: 'Open Marketing module', hint: 'Lead pipeline, email outreach' },
   { id: 'mkt.edit', label: 'Edit leads & templates', hint: 'Add, move and edit leads and email templates' },
   { id: 'mkt.send', label: 'Send marketing email', hint: 'Send email through the connected Microsoft account' },

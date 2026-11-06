@@ -51,7 +51,7 @@ export default function PortfolioPage() {
                   </div>
                 </div>
                 <div className="mt-4 flex gap-3 text-sm">
-                  <Link className="font-medium underline-offset-4 hover:underline" to="/pm" onClick={() => setProject(p.id)}>Open PM dashboard</Link>
+                  <Link className="font-medium underline-offset-4 hover:underline" to="/pm/info" onClick={() => setProject(p.id)}>Open project info</Link>
                   <Link className="font-medium underline-offset-4 hover:underline" to="/hr" onClick={() => setProject(p.id)}>Open hiring pipeline</Link>
                 </div>
               </Card>

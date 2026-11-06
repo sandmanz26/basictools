@@ -1,6 +1,7 @@
 import type {
   BudgetItem,
   Candidate,
+  Invoice,
   EmailTemplate,
   Lead,
   Member,
@@ -19,7 +20,7 @@ import type {
   WorkArrangement,
 } from '@/types'
 import { DEFAULT_STAGES, PERMISSIONS } from '@/lib/constants'
-import { DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
+import { ALL_FEATURES, DEFAULT_INFO, DEFAULT_PM_STAGES } from '@/lib/pm'
 
 const allPerms = (v: boolean): Record<Permission, boolean> =>
   Object.fromEntries(PERMISSIONS.map((p) => [p.id, v])) as Record<Permission, boolean>
@@ -30,7 +31,7 @@ export const ROLES: Role[] = [
     id: 'r-hr',
     name: 'HR Recruiter',
     description: 'Runs the pipeline day to day',
-    permissions: { ...allPerms(true), 'roles.manage': false, 'pm.edit': false, 'module.mkt': false, 'mkt.edit': false, 'mkt.send': false },
+    permissions: { ...allPerms(true), 'roles.manage': false, 'pm.edit': false, 'pm.invoice': false, 'module.mkt': false, 'mkt.edit': false, 'mkt.send': false },
   },
   {
     id: 'r-pm',
@@ -70,7 +71,7 @@ export const USERS: User[] = [
 ]
 
 export const PROJECTS: Project[] = [
-  { id: 'p1', name: 'Engineering Q4 2026', description: 'Product engineering hiring for the Q4 roadmap', status: 'active', createdAt: '2026-09-15', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(),
+  { id: 'p1', name: 'Engineering Q4 2026', description: 'Product engineering hiring for the Q4 roadmap', status: 'active', createdAt: '2026-09-15', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: ALL_FEATURES(),
     info: {
       ...DEFAULT_INFO(), health: 'at_risk', phase: 'execution', methodology: 'Agile', priority: 'high', sponsor: 'Rina (CTO)', manager: 'Rina (PM)',
       client: 'Internal – Product', startDate: '2026-10-01', endDate: '2027-02-26', budget: 1_800_000_000,
@@ -84,7 +85,7 @@ export const PROJECTS: Project[] = [
         { id: 'sh3', name: 'Mira', role: 'Finance Business Partner', influence: 'medium', contact: 'mira@company.id' },
       ],
     } },
-  { id: 'p2', name: 'Design & Product 2026', description: 'Design team expansion', status: 'active', createdAt: '2026-10-01', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(),
+  { id: 'p2', name: 'Design & Product 2026', description: 'Design team expansion', status: 'active', createdAt: '2026-10-01', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: ALL_FEATURES(),
     info: {
       ...DEFAULT_INFO(), health: 'on_track', phase: 'planning', methodology: 'Hybrid', priority: 'medium', sponsor: 'Nina (Design Lead)', manager: 'Rina (PM)',
       client: 'Internal – Design', startDate: '2026-10-15', endDate: '2027-03-31', budget: 650_000_000,
@@ -330,4 +331,10 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: 'et2', name: 'Follow-up', subject: 'Following up, {{firstName}}',
     body: 'Hi {{firstName}},\n\nJust checking in on my last note. Happy to share a short case study relevant to {{company}} if useful.\n\nBest regards,\n{{owner}}',
   },
+]
+
+export const INVOICES: Invoice[] = [
+  { id: 'inv1', projectId: 'p1', number: 'INV-2026-001', clientName: 'Anton', clientEmail: 'anton@company.id', issueDate: '2026-10-05', dueDate: '2026-10-20', items: [{ id: 'ii1', description: 'Customer Portal v2 - milestone 1', qty: 1, unitPrice: 250_000_000 }], taxPct: 11, status: 'paid', notes: '', sentAt: '2026-10-05T03:00:00.000Z' },
+  { id: 'inv2', projectId: 'p1', number: 'INV-2026-002', clientName: 'Anton', clientEmail: 'anton@company.id', issueDate: '2026-10-28', dueDate: '2026-11-04', items: [{ id: 'ii2', description: 'Customer Portal v2 - milestone 2', qty: 1, unitPrice: 300_000_000 }], taxPct: 11, status: 'sent', notes: 'Payment to BCA 123-456-789.', sentAt: '2026-10-28T03:00:00.000Z' },
+  { id: 'inv3', projectId: 'p2', number: 'INV-2026-003', clientName: 'Nina', clientEmail: 'nina@company.id', issueDate: '2026-11-03', dueDate: '2026-11-30', items: [{ id: 'ii3', description: 'Design system audit', qty: 2, unitPrice: 45_000_000 }], taxPct: 11, status: 'draft', notes: '', sentAt: '' },
 ]
