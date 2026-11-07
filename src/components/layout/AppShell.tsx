@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  BellRing, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, Lock, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
 import { useBillingAlerts } from '@/lib/alerts'
 import { useAuth } from '@/auth'
+import { canOpen } from '@/lib/access'
 import { NativeSelect } from '@/components/NativeSelect'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Permission, PmFeature } from '@/types'
@@ -87,7 +88,8 @@ export function AppShell() {
   const { user, role } = useCurrentUser()
   const billingAlerts = useBillingAlerts()
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
-  const visible = MODULES.filter((m) => !m.perm || can(m.perm))
+  // Every module stays in the rail; the ones this role can't open are shown locked.
+  const locked = (path: string) => !canOpen(can, path)
   const features = (projects.find((p) => p.id === activeProjectId) ?? projects[0])?.pmFeatures
   const shown = (n: NavItem) => !n.feature || (n.feature === 'any' ? !!features && Object.values(features).some(Boolean) : !!features?.[n.feature])
   const sections = (current?.sections ?? []).map((sec) => ({ ...sec, items: sec.items.filter(shown) })).filter((sec) => sec.items.length)
@@ -102,17 +104,19 @@ export function AppShell() {
         </div>
         <div className="mb-3 h-px w-8 bg-border" />
         <div className="flex flex-col gap-2">
-          {visible.map((m) => (
+          {MODULES.map((m) => (
             <button
               key={m.id}
-              title={m.title}
+              title={locked(m.base) ? `${m.title} (locked)` : m.title}
               onClick={() => nav(m.base)}
               className={cn(
                 'relative grid h-11 w-12 place-items-center rounded-xl text-[13px] font-bold transition-colors',
                 current?.id === m.id ? 'bg-primary/10 text-foreground ring-2 ring-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70',
+                locked(m.base) && 'opacity-50',
               )}
             >
               {m.short}
+              {locked(m.base) && <Lock className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-muted-foreground ring-1 ring-border" />}
               {m.id === 'pm' && billingAlerts > 0 && (
                 <span title={`${billingAlerts} billing items need action`} className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] leading-4 font-semibold text-white">{billingAlerts}</span>
               )}
@@ -165,10 +169,11 @@ export function AppShell() {
                     to={n.to}
                     end={n.end}
                     className={({ isActive }) =>
-                      cn('flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', isActive && 'bg-muted font-medium text-foreground')
+                      cn('flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground', locked(n.to) && 'opacity-60', isActive && 'bg-muted font-medium text-foreground')
                     }
                   >
                     <n.icon className="size-4" /> {n.label}
+                    {locked(n.to) && <Lock className="ml-auto size-3.5 opacity-60" />}
                   </NavLink>
                 ))}
               </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { Lock, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -30,15 +30,16 @@ export default function SettingsPage() {
           <h1 className="text-xl font-semibold tracking-tight">Roles & Settings</h1>
           <p className="text-sm text-muted-foreground">Control who can edit job descriptions, tests, salary data and sharing.</p>
         </div>
-        <Tabs value={params.get('tab') ?? 'roles'} onValueChange={(v) => setParams({ tab: v as string })}>
+        {!canRoles && <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground"><Lock className="size-4" /> Roles, team and data tools are locked for your role. You can still manage your own account.</div>}
+        <Tabs value={canRoles ? params.get('tab') ?? 'roles' : 'account'} onValueChange={(v) => setParams({ tab: v as string })}>
           <TabsList>
-            <TabsTrigger value="roles">Roles & permissions</TabsTrigger>
-            <TabsTrigger value="users">Team{users.some((u) => u.status === 'pending') && <span className="ml-1.5 size-2 rounded-full bg-red-600" />}</TabsTrigger>
+            {canRoles && <TabsTrigger value="roles">Roles & permissions</TabsTrigger>}
+            {canRoles && <TabsTrigger value="users">Team{users.some((u) => u.status === 'pending') && <span className="ml-1.5 size-2 rounded-full bg-red-600" />}</TabsTrigger>}
             <TabsTrigger value="account">Account</TabsTrigger>
-            <TabsTrigger value="data">Demo data</TabsTrigger>
+            {canRoles && <TabsTrigger value="data">Demo data</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="roles" className="space-y-3 pt-4">
+          {canRoles && <TabsContent value="roles" className="space-y-3 pt-4">
             {!canRoles && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Only roles with “Manage roles” can change this matrix.</div>}
             <div className="overflow-x-auto rounded-xl border">
               <table className="w-full text-sm">
@@ -68,9 +69,9 @@ export default function SettingsPage() {
                 <Button variant="outline" onClick={() => { if (newRole.trim()) { addRole(newRole.trim()); setNewRole('') } }}><Plus /> Add role</Button>
               </div>
             )}
-          </TabsContent>
+          </TabsContent>}
 
-          <TabsContent value="users" className="space-y-2 pt-4">
+          {canRoles && <TabsContent value="users" className="space-y-2 pt-4">
             <p className="text-sm text-muted-foreground">New sign-ups wait here until an admin approves them and picks a role.</p>
             <div className="divide-y rounded-xl border">
               {[...users].sort((x, y) => Number(y.status === 'pending') - Number(x.status === 'pending')).map((u) => {
@@ -98,16 +99,16 @@ export default function SettingsPage() {
                 )
               })}
             </div>
-          </TabsContent>
+          </TabsContent>}
 
           <TabsContent value="account" className="pt-4">
             <ChangePassword />
           </TabsContent>
 
-          <TabsContent value="data" className="space-y-3 pt-4">
+          {canRoles && <TabsContent value="data" className="space-y-3 pt-4">
             <p className="text-sm text-muted-foreground">Everything is stored in this browser (localStorage). There is no backend yet.</p>
             <Button variant="destructive" onClick={() => confirm('Reset all data to the demo set?') && reset()}>Reset demo data</Button>
-          </TabsContent>
+          </TabsContent>}
         </Tabs>
       </div>
     </div>
