@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  BellRing, Lock, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, Crown, Lock, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
@@ -15,7 +15,7 @@ import type { Permission, PmFeature } from '@/types'
 interface NavItem { to: string; label: string; icon: LucideIcon; end?: boolean; feature?: PmFeature | 'any' }
 interface Module {
   id: 'projects' | 'hr' | 'pm' | 'mkt'
-  short: string
+  icon: LucideIcon // first-layer rail shows an icon only; the title is the tooltip
   title: string
   base: string
   perm: Permission | null
@@ -25,14 +25,14 @@ interface Module {
 
 export const MODULES: Module[] = [
   {
-    id: 'projects', short: 'PRJ', title: 'Projects', base: '/projects', perm: null, needsProject: false,
+    id: 'projects', icon: Crown, title: 'Projects', base: '/projects', perm: null, needsProject: false,
     sections: [
       { label: 'Overview', items: [{ to: '/projects', label: 'Portfolio', icon: LayoutGrid, end: true }] },
       { label: 'Management', items: [{ to: '/projects/manage', label: 'Manage projects', icon: FolderCog }] },
     ],
   },
   {
-    id: 'hr', short: 'HR', title: 'Hiring (HR)', base: '/hr', perm: 'module.hr', needsProject: true,
+    id: 'hr', icon: UserSearch, title: 'Hiring (HR)', base: '/hr', perm: 'module.hr', needsProject: true,
     sections: [
       { label: 'Recruitment', items: [
         { to: '/hr', label: 'Pipeline', icon: FolderKanban, end: true },
@@ -46,7 +46,7 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    id: 'pm', short: 'PM', title: 'Project Management', base: '/pm', perm: 'module.pm', needsProject: true,
+    id: 'pm', icon: SquareKanban, title: 'Project Management', base: '/pm', perm: 'module.pm', needsProject: true,
     sections: [
       { label: 'Overview', items: [
         { to: '/pm', label: 'All projects', icon: LayoutGrid, end: true },
@@ -67,7 +67,7 @@ export const MODULES: Module[] = [
     ],
   },
   {
-    id: 'mkt', short: 'MKT', title: 'Marketing', base: '/mkt', perm: 'module.mkt', needsProject: false,
+    id: 'mkt', icon: Megaphone, title: 'Marketing', base: '/mkt', perm: 'module.mkt', needsProject: false,
     sections: [
       { label: 'Sales', items: [
         { to: '/mkt', label: 'Lead pipeline', icon: FolderKanban, end: true },
@@ -108,14 +108,15 @@ export function AppShell() {
             <button
               key={m.id}
               title={locked(m.base) ? `${m.title} (locked)` : m.title}
+              aria-label={m.title}
               onClick={() => nav(m.base)}
               className={cn(
-                'relative grid h-11 w-12 place-items-center rounded-xl text-[13px] font-bold transition-colors',
+                'relative grid size-11 place-items-center rounded-xl transition-colors',
                 current?.id === m.id ? 'bg-primary/10 text-foreground ring-2 ring-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70',
                 locked(m.base) && 'opacity-50',
               )}
             >
-              {m.short}
+              <m.icon className="size-5" />
               {locked(m.base) && <Lock className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-muted-foreground ring-1 ring-border" />}
               {m.id === 'pm' && billingAlerts > 0 && (
                 <span title={`${billingAlerts} billing items need action`} className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] leading-4 font-semibold text-white">{billingAlerts}</span>

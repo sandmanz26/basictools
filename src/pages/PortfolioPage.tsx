@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Card, HealthBadge, PageHeader, Progress, PriorityBadge, pageCls } from '@/components/pm/ui'
 import { useStore } from '@/store'
-import { PHASES, money } from '@/lib/pm'
+import { PHASES, fieldsOf, money } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
 
 /** All projects at a glance — the shared view for HR and PM. */
@@ -26,14 +26,16 @@ export default function PortfolioPage() {
             const openRisks = risks.filter((r) => r.projectId === p.id && r.status !== 'closed').length
             const planned = budget.filter((b) => b.projectId === p.id).reduce((a, b) => a + b.planned, 0)
             const actual = budget.filter((b) => b.projectId === p.id).reduce((a, b) => a + b.actual, 0)
+            const fl = fieldsOf(p)
+            const sub = [fl.phase && PHASES.find((x) => x.value === p.info.phase)?.label, fl.manager && `PM ${p.info.manager || '—'}`, fl.startDate && fl.endDate ? `${fmtDate(p.info.startDate)} → ${fmtDate(p.info.endDate)}` : fl.startDate ? `From ${fmtDate(p.info.startDate)}` : fl.endDate ? `Until ${fmtDate(p.info.endDate)}` : ''].filter(Boolean).join(' · ')
             return (
               <Card key={p.id} className={p.status === 'archived' ? 'opacity-60' : ''}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-base font-semibold">{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{PHASES.find((x) => x.value === p.info.phase)?.label} · PM {p.info.manager || '—'} · {fmtDate(p.info.startDate)} → {fmtDate(p.info.endDate)}</div>
+                    {sub && <div className="text-xs text-muted-foreground">{sub}</div>}
                   </div>
-                  <div className="flex items-center gap-2"><PriorityBadge priority={p.info.priority} /><HealthBadge health={p.info.health} /></div>
+                  <div className="flex items-center gap-2">{fl.priority && <PriorityBadge priority={p.info.priority} />}{fl.health && <HealthBadge health={p.info.health} />}</div>
                 </div>
                 <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{p.description}</p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">

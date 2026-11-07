@@ -10,10 +10,21 @@ export interface Stage {
   nextStep: string // default "Next step" text when a candidate enters this stage
 }
 
-export type RoundResult = 'pending' | 'pass' | 'fail' | 'no_show'
+export type RoundResult = 'pending' | 'pass' | 'fail' | 'no_show' | 'rescheduled'
 export type RoundKey = string
 export type WorkArrangement = 'WFO' | 'Hybrid' | 'WFH' | 'Any'
 export type ScreeningResult = 'pending' | 'pass' | 'fail'
+
+/** A previous try of the same interview (candidate couldn't attend, interviewer unavailable, ...). */
+export interface RoundAttempt {
+  date: string
+  time: string
+  interviewer: string
+  result: RoundResult
+  notes: string
+  reason: string
+  at: string // yyyy-mm-dd the reschedule was recorded
+}
 
 export interface Round {
   date: string // yyyy-mm-dd
@@ -21,6 +32,7 @@ export interface Round {
   interviewer: string
   result: RoundResult
   notes: string
+  history?: RoundAttempt[] // earlier attempts, oldest first; the fields above are the current attempt
 }
 
 export interface Talent {
@@ -110,6 +122,7 @@ export interface Project {
   pmStages: Stage[] // PM work board workflow (separate from HR)
   info: ProjectInfo
   pmFeatures: Record<PmFeature, boolean> // optional PM tools, off by default
+  pmFields?: Record<PmField, boolean> // which project-info fields this project uses; missing = all
 }
 
 export type Permission =
@@ -327,6 +340,10 @@ export interface MsConfig {
   clientId: string
   tenant: string // 'common' | 'organizations' | tenant id
 }
+
+export type PmField =
+  | 'health' | 'phase' | 'priority' | 'methodology' | 'startDate' | 'endDate' | 'manager' | 'sponsor' | 'client' | 'budget'
+  | 'objectives' | 'successCriteria' | 'scope' | 'assumptions' | 'stakeholders'
 
 export type PmFeature = 'board' | 'timeline' | 'risks' | 'team' | 'budget' | 'updates'
 

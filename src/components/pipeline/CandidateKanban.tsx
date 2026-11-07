@@ -3,13 +3,13 @@ import { CalendarDays, Wallet } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
 import type { Candidate, Position, Stage, StageId } from '@/types'
-import { fmtDate, getRound, salaryText, stageDot } from '@/lib/constants'
+import { fmtDate, getRound, reschedules, salaryText, stageDot } from '@/lib/constants'
 import type { ViewMode } from './CandidateTable'
 
 function nextInterview(c: Candidate, stages: Stage[]) {
   for (const st of stages.filter((x) => x.interview)) {
     const r = getRound(c, st.id)
-    if (r.date && r.result === 'pending') return `${st.label} · ${fmtDate(r.date)} ${r.time}`
+    if (r.date && r.result === 'pending') return `${st.label} · ${fmtDate(r.date)} ${r.time}${reschedules(c, st.id) ? ` · ↻${reschedules(c, st.id)}` : ''}`
   }
   return null
 }

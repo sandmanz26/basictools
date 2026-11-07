@@ -28,7 +28,7 @@ export function PipelineView({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         {!lockView && (
           <Tabs value={view} onValueChange={(v) => setView(v as 'table' | 'kanban')}>
             <TabsList>
@@ -37,10 +37,11 @@ export function PipelineView({
             </TabsList>
           </Tabs>
         )}
-        <div className="min-w-0 flex-1">
-          <FilterBar filters={filters} onChange={setFilters} positions={positions} stages={stages} owners={owners} showSalary={mode.showSalary} total={candidates.filter((c) => c.archived === filters.archived).length} shown={rows.length} />
+        <FilterBar filters={filters} onChange={setFilters} positions={positions} stages={stages} owners={owners} showSalary={mode.showSalary} />
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">{rows.length} of {candidates.filter((c) => c.archived === filters.archived).length}</span>
+          {toolbarExtra?.(rows)}
         </div>
-        {toolbarExtra?.(rows)}
       </div>
       <div className="min-h-0 flex-1">
         {view === 'table' ? (

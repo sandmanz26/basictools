@@ -1,11 +1,13 @@
+import { useState } from 'react'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useStore } from '@/store'
 import type { Position, RoundResult, Stage } from '@/types'
-import { ARRANGEMENTS, RESULT_META, SOURCES, getRound, stageTone } from '@/lib/constants'
+import { ARRANGEMENTS, RESCHEDULE_REASONS, RESULT_META, SOURCES, fmtDate, getRound, stageTone } from '@/lib/constants'
 import { Button } from '@/components/ui/button'
-import { Archive, ArchiveRestore } from 'lucide-react'
+import { Archive, ArchiveRestore, RefreshCw } from 'lucide-react'
+import { NativeSelect } from '@/components/NativeSelect'
 import { NumberCell, SelectCell, TextCell } from './cells'
 import type { ViewMode } from './CandidateTable'
 
@@ -28,9 +30,10 @@ export function CandidateSheet({
   mode: ViewMode
 }) {
   const c = useStore((s) => s.candidates.find((x) => x.id === id))
-  const { updateCandidate, updateRound, setRoundResult, moveCandidate, archiveCandidate } = useStore()
+  const { updateCandidate, updateRound, setRoundResult, rescheduleRound, moveCandidate, archiveCandidate } = useStore()
+  const [reason, setReason] = useState(RESCHEDULE_REASONS[0])
   const ro = mode.readOnly
-  const resultOpts = (Object.keys(RESULT_META) as RoundResult[]).map((r) => ({ value: r, label: RESULT_META[r].label }))
+  const resultOpts = (['pending', 'pass', 'fail', 'no_show'] as RoundResult[]).map((r) => ({ value: r, label: RESULT_META[r].label }))
 
   return (
     <Sheet open={!!c} onOpenChange={(o) => !o && onClose()}>
@@ -85,7 +88,27 @@ export function CandidateSheet({
                       <Field label="Interviewer"><TextCell value={rd.interviewer} readOnly={ro} onCommit={(v) => updateRound(c.id, k, { interviewer: v })} /></Field>
                       <Field label="Result"><SelectCell value={rd.result} options={resultOpts} readOnly={ro} tone={RESULT_META[rd.result].tone} onChange={(v) => setRoundResult(c.id, k, v as RoundResult)} /></Field>
                     </div>
-                    <Textarea disabled={ro} placeholder="Interview notes" defaultValue={rd.notes} key={c.id + k} onBlur={(e) => updateRound(c.id, k, { notes: e.target.value })} />
+                    <Textarea disabled={ro} placeholder="Interview notes" defaultValue={rd.notes} key={c.id + k + (rd.history?.length ?? 0)} onBlur={(e) => updateRound(c.id, k, { notes: e.target.value })} />
+                    {!ro && (rd.date || rd.result !== 'pending') && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/50 p-2">
+                        <span className="text-xs text-muted-foreground">Can’t make it?</span>
+                        <NativeSelect value={reason} onChange={setReason} options={RESCHEDULE_REASONS.map((x) => ({ value: x, label: x }))} />
+                        <Button size="sm" variant="outline" onClick={() => rescheduleRound(c.id, k, reason)}><RefreshCw /> Reschedule</Button>
+                      </div>
+                    )}
+                    {(rd.history?.length ?? 0) > 0 && (
+                      <div className="space-y-1 border-t pt-2">
+                        <div className="text-xs font-medium text-muted-foreground">Earlier attempts</div>
+                        {rd.history!.map((h, i) => (
+                          <div key={i} className="flex flex-wrap items-center gap-x-2 text-xs">
+                            <span className="rounded bg-muted px-1.5 py-0.5 font-medium">#{i + 1}</span>
+                            <span>{fmtDate(h.date) || 'no date'} {h.time}</span>
+                            <span className={'rounded px-1.5 py-0.5 ' + RESULT_META[h.result].tone}>{RESULT_META[h.result].label}</span>
+                            <span className="text-muted-foreground">{h.reason}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

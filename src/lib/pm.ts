@@ -1,4 +1,4 @@
-import type { Health, Invoice, InvoiceStatus, Phase, PmFeature, Priority, ProjectInfo, Stage } from '@/types'
+import type { Health, Invoice, InvoiceStatus, Phase, PmFeature, PmField, Priority, Project, ProjectInfo, Stage } from '@/types'
 
 export const HEALTH: Record<Health, { label: string; tone: string; dot: string }> = {
   on_track: { label: 'On track', tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300', dot: 'bg-emerald-500' },
@@ -65,6 +65,38 @@ export const PM_FEATURES: { id: PmFeature; label: string; hint: string; to: stri
 ]
 export const NO_FEATURES = (): Record<PmFeature, boolean> => ({ board: false, timeline: false, risks: false, team: false, budget: false, updates: false })
 export const ALL_FEATURES = (): Record<PmFeature, boolean> => ({ board: true, timeline: true, risks: true, team: true, budget: true, updates: true })
+
+// ---------- project info fields ----------
+
+export const PM_FIELDS: { id: PmField; label: string; group: string }[] = [
+  { id: 'health', label: 'Status (health)', group: 'Status & schedule' },
+  { id: 'startDate', label: 'Start date', group: 'Status & schedule' },
+  { id: 'endDate', label: 'Target end date', group: 'Status & schedule' },
+  { id: 'phase', label: 'Phase', group: 'Status & schedule' },
+  { id: 'priority', label: 'Priority', group: 'Status & schedule' },
+  { id: 'manager', label: 'Project manager', group: 'People & money' },
+  { id: 'sponsor', label: 'Sponsor', group: 'People & money' },
+  { id: 'client', label: 'Client / business owner', group: 'People & money' },
+  { id: 'methodology', label: 'Methodology', group: 'People & money' },
+  { id: 'budget', label: 'Budget', group: 'People & money' },
+  { id: 'objectives', label: 'Objectives', group: 'Planning notes' },
+  { id: 'successCriteria', label: 'Success criteria', group: 'Planning notes' },
+  { id: 'scope', label: 'Scope (in / out)', group: 'Planning notes' },
+  { id: 'assumptions', label: 'Assumptions & constraints', group: 'Planning notes' },
+  { id: 'stakeholders', label: 'Stakeholders', group: 'Planning notes' },
+]
+const fieldSet = (on: PmField[]): Record<PmField, boolean> =>
+  Object.fromEntries(PM_FIELDS.map((f) => [f.id, on.includes(f.id)])) as Record<PmField, boolean>
+export const FIELDS_MINIMAL = () => fieldSet(['health', 'startDate'])
+export const FIELDS_STANDARD = () => fieldSet(['health', 'phase', 'startDate', 'endDate', 'manager', 'client', 'budget'])
+export const FIELDS_FULL = () => fieldSet(PM_FIELDS.map((f) => f.id))
+export const FIELD_PRESETS: { id: string; label: string; hint: string; make: () => Record<PmField, boolean> }[] = [
+  { id: 'minimal', label: 'Minimal', hint: 'Status and start date only', make: FIELDS_MINIMAL },
+  { id: 'standard', label: 'Standard', hint: 'Status, dates, phase, PM, client, budget', make: FIELDS_STANDARD },
+  { id: 'full', label: 'Full', hint: 'Everything, including planning notes', make: FIELDS_FULL },
+]
+/** Projects created before this setting existed show every field. */
+export const fieldsOf = (p: Pick<Project, 'pmFields'>) => p.pmFields ?? FIELDS_FULL()
 
 // ---------- invoices ----------
 

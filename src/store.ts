@@ -29,7 +29,7 @@ import type {
 } from '@/types'
 import { SCHEDULES } from '@/data/mock'
 import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
-import { DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
+import { FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_LEAD_COLUMNS, DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
@@ -85,6 +85,7 @@ interface State {
   updateInvoice: (id: string, patch: Partial<Invoice>) => void
   deleteInvoice: (id: string) => void
   setPmFeature: (projectId: string, feature: keyof Project['pmFeatures'], on: boolean) => void
+  setPmFields: (projectId: string, fields: NonNullable<Project['pmFields']>) => void
   addBroadcast: (b: Broadcast) => void
   updateBroadcast: (id: string, patch: Partial<Broadcast>) => void
   setBroadcastRecipient: (id: string, leadId: string, status: 'pending' | 'sent' | 'failed') => void
@@ -111,6 +112,7 @@ interface State {
   updateCandidate: (id: string, patch: Partial<Candidate>) => void
   updateRound: (id: string, key: RoundKey, patch: Partial<Candidate['rounds'][RoundKey]>) => void
   setRoundResult: (id: string, key: RoundKey, result: RoundResult) => void
+  rescheduleRound: (id: string, key: RoundKey, reason: string) => void
   moveCandidate: (id: string, stage: StageId) => void
   deleteCandidate: (id: string) => void
   archiveCandidate: (id: string, archived: boolean) => void
@@ -118,7 +120,7 @@ interface State {
   addTalent: (t?: Partial<Talent>) => string
   updateTalent: (id: string, patch: Partial<Talent>) => void
   deleteTalent: (id: string) => void
-  addTalentsToProject: (projectId: string, talentIds: string[], positionId: string) => number
+  addTalentsToProject: (projectId: string, talentIds: string[], positionId: string, opts?: { stageId?: string; nextStep?: string }) => number
   importCandidates: (projectId: string, records: ImportRecord[], opts: ImportOpts) => ImportSummary
   importTalents: (records: ImportRecord[]) => ImportSummary
 
@@ -289,6 +291,8 @@ export const useStore = create<State>()(
       addInvoice: (i) => set((s) => ({ invoices: [i, ...s.invoices] })),
       updateInvoice: (id, patch) => set((s) => ({ invoices: s.invoices.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       deleteInvoice: (id) => set((s) => ({ invoices: s.invoices.filter((x) => x.id !== id) })),
+      setPmFields: (projectId, fields) =>
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFields: fields } : p)) })),
       setPmFeature: (projectId, feature, on) =>
         set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: { ...p.pmFeatures, [feature]: on } } : p)) })),
       addBroadcast: (b) => set((s) => ({ broadcasts: [b, ...s.broadcasts] })),
@@ -304,7 +308,7 @@ export const useStore = create<State>()(
       addProject: (name, description) => {
         const id = 'p-' + nanoid(6)
         set((s) => ({
-          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: NO_FEATURES(), info: { ...DEFAULT_INFO(), startDate: today() } }],
+          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: NO_FEATURES(), pmFields: FIELDS_STANDARD(), info: { ...DEFAULT_INFO(), startDate: today() } }],
           activeProjectId: id,
         }))
         return id
@@ -404,6 +408,26 @@ export const useStore = create<State>()(
             return { ...c, rounds, stage, nextStep: stage !== c.stage ? stageById(stages, stage)?.nextStep ?? c.nextStep : c.nextStep }
           }),
         ),
+      // Repeat an interview: keep the old attempt in history and open a fresh slot to schedule again.
+      rescheduleRound: (id, key, reason) =>
+        set((s) =>
+          mapC(s, id, (c) => {
+            const stages = stagesOf(s, c.projectId)
+            const cur = c.rounds[key] ?? emptyRound()
+            if (!cur.date && cur.result === 'pending') return c // nothing scheduled yet, nothing to reschedule
+            const attempt = { date: cur.date, time: cur.time, interviewer: cur.interviewer, notes: cur.notes, reason, at: today(), result: cur.result === 'pending' ? ('rescheduled' as const) : cur.result }
+            const label = stageById(stages, key)?.label ?? 'interview'
+            const history = [...(cur.history ?? []), attempt]
+            // If the candidate had already been rejected / moved on by this round, bring them back to it.
+            const back = c.stage !== key && cur.result !== 'pending' ? key : c.stage
+            return {
+              ...c,
+              stage: back,
+              rounds: { ...c.rounds, [key]: { ...emptyRound(), interviewer: cur.interviewer, history } },
+              nextStep: `Reschedule ${label} (attempt ${history.length + 1})`,
+            }
+          }),
+        ),
       moveCandidate: (id, stage) =>
         set((s) => mapC(s, id, (c) => ({ ...c, stage, nextStep: stageById(stagesOf(s, c.projectId), stage)?.nextStep ?? c.nextStep }))),
       archiveCandidate: (id, archived) => set((s) => mapC(s, id, (c) => ({ ...c, archived }))),
@@ -429,9 +453,10 @@ export const useStore = create<State>()(
           talents: s.talents.filter((t) => t.id !== id),
           candidates: s.candidates.map((c) => (c.talentId === id ? { ...c, talentId: '' } : c)),
         })),
-      addTalentsToProject: (projectId, talentIds, positionId) => {
+      addTalentsToProject: (projectId, talentIds, positionId, opts) => {
         const s = get()
-        const first = stagesOf(s, projectId)[0]
+        const stages = stagesOf(s, projectId)
+        const first = stages.find((x) => x.id === opts?.stageId) ?? stages[0]
         const have = new Set(s.candidates.filter((c) => c.projectId === projectId).map((c) => c.talentId))
         const add: Candidate[] = []
         for (const id of talentIds) {
@@ -440,6 +465,7 @@ export const useStore = create<State>()(
           add.push({
             ...blankCandidate(projectId, id, first), name: t.name, email: t.email, phone: t.phone, source: t.source,
             salaryMin: t.salaryMin, salaryMax: t.salaryMax, arrangement: t.arrangement, positionId, notes: t.notes,
+            nextStep: opts?.nextStep ?? first?.nextStep ?? '',
           })
         }
         set({ candidates: [...add, ...s.candidates] })

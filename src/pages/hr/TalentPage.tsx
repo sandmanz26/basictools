@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Download, Plus, Search, Trash2, Upload } from 'lucide-react'
+import { ArrowRightCircle, Download, Plus, Search, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { NativeSelect } from '@/components/NativeSelect'
 import { ImportDialog } from '@/components/ImportDialog'
-import { NumberCell, SelectCell, TextCell } from '@/components/pipeline/cells'
+import { ProcessTalentDialog } from '@/components/ProcessTalentDialog'
+import { RangeCell, SelectCell, TextCell } from '@/components/pipeline/cells'
 import { cn } from '@/lib/utils'
 import { useCan, useStore } from '@/store'
 import { ARRANGEMENTS, SOURCES, fmtDate } from '@/lib/constants'
@@ -15,10 +16,9 @@ import type { Talent } from '@/types'
 
 const th = 'border-b border-r bg-muted px-2 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground'
 const td = 'border-b border-r p-0 align-middle'
-const jt = (n: number) => (n / 1_000_000).toLocaleString('id-ID') + ' jt'
 
 export default function TalentPage() {
-  const { talents, candidates, projects, activeProjectId, updateTalent, addTalent, deleteTalent, addTalentsToProject, positions } = useStore()
+  const { talents, candidates, projects, activeProjectId, updateTalent, addTalent, deleteTalent } = useStore()
   const can = useCan()
   const ro = !can('candidates.edit')
   const showSalary = can('salary.view')
@@ -26,9 +26,7 @@ export default function TalentPage() {
   const [filter, setFilter] = useState('all')
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [importing, setImporting] = useState(false)
-  const [target, setTarget] = useState(activeProjectId)
-  const [targetPos, setTargetPos] = useState('')
-  const [notice, setNotice] = useState('')
+  const [processing, setProcessing] = useState<string[]>([])
 
   const membership = useMemo(() => {
     const m = new Map<string, { projectId: string; stage: string }[]>()
@@ -50,7 +48,6 @@ export default function TalentPage() {
 
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const allSelected = rows.length > 0 && rows.every((t) => sel.has(t.id))
-  const projPositions = positions.filter((p) => p.projectId === target)
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
   const exportRows = sel.size ? rows.filter((t) => sel.has(t.id)) : rows
@@ -94,19 +91,10 @@ export default function TalentPage() {
       {!ro && sel.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/50 px-3 py-2 text-sm">
           <span className="font-medium">{sel.size} selected</span>
-          <span className="text-muted-foreground">Add to</span>
-          <NativeSelect value={target} onChange={(v) => { setTarget(v); setTargetPos('') }} options={projects.filter((p) => p.status === 'active').map((p) => ({ value: p.id, label: p.name }))} />
-          <NativeSelect value={targetPos} onChange={setTargetPos} options={[{ value: '', label: 'No position yet' }, ...projPositions.map((p) => ({ value: p.id, label: p.title }))]} />
-          <Button size="sm" onClick={() => {
-            const n = addTalentsToProject(target, [...sel], targetPos)
-            setNotice(`${n} added to ${projectName(target)}${n < sel.size ? ` (${sel.size - n} already there)` : ''}`)
-            setSel(new Set())
-            setTimeout(() => setNotice(''), 4000)
-          }}>Add to project</Button>
+          <Button size="sm" onClick={() => setProcessing([...sel])}><ArrowRightCircle /> Process to pipeline</Button>
           <Button size="sm" variant="ghost" onClick={() => setSel(new Set())}>Clear</Button>
         </div>
       )}
-      {notice && <div className="rounded-lg bg-emerald-100 px-3 py-2 text-sm text-emerald-800">{notice}</div>}
 
       <div className="min-h-0 flex-1 overflow-auto rounded-lg border bg-background">
         <table className="w-max min-w-full border-separate border-spacing-0 text-sm">
@@ -120,11 +108,11 @@ export default function TalentPage() {
               <th className={cn(th, 'w-40')}>Phone</th>
               <th className={cn(th, 'w-56')}>Skills</th>
               <th className={cn(th, 'w-28')}>Source</th>
-              {showSalary && <th className={cn(th, 'w-72')}>Expected Salary (min – max)</th>}
+              {showSalary && <th className={cn(th, 'w-48')}>Expected Salary</th>}
               <th className={cn(th, 'w-28')}>Working</th>
               <th className={cn(th, 'w-80')}>Projects</th>
               <th className={cn(th, 'w-24')}>Added</th>
-              <th className="w-12 border-b bg-muted" />
+              <th className="sticky right-0 z-30 w-36 border-b border-l bg-muted" />
             </tr>
           </thead>
           <tbody>
@@ -141,13 +129,7 @@ export default function TalentPage() {
                   <td className={td}><TextCell value={t.skills} readOnly={ro} placeholder="React, Go, Figma…" onCommit={(v) => patch(t, { skills: v })} /></td>
                   <td className={td}><SelectCell value={t.source} options={[...new Set([...SOURCES, t.source].filter(Boolean))].map((s) => ({ value: s, label: s }))} readOnly={ro} onChange={(v) => patch(t, { source: v })} /></td>
                   {showSalary && (
-                    <td className={td}>
-                      <div className="flex items-center">
-                        <NumberCell value={t.salaryMin} readOnly={ro} scale={1_000_000} format={jt} placeholder="Min (jt)" onCommit={(v) => patch(t, { salaryMin: v })} />
-                        <span className="text-muted-foreground">–</span>
-                        <NumberCell value={t.salaryMax} readOnly={ro} scale={1_000_000} format={jt} placeholder="Max (jt)" onCommit={(v) => patch(t, { salaryMax: v })} />
-                      </div>
-                    </td>
+                    <td className={td}><RangeCell min={t.salaryMin} max={t.salaryMax} readOnly={ro} onCommit={(mn, mx) => patch(t, { salaryMin: mn, salaryMax: mx })} /></td>
                   )}
                   <td className={td}><SelectCell value={t.arrangement} options={ARRANGEMENTS.map((a) => ({ value: a, label: a }))} readOnly={ro} onChange={(v) => patch(t, { arrangement: v as Talent['arrangement'] })} /></td>
                   <td className={cn(td, 'px-2 py-1.5')}>
@@ -168,12 +150,19 @@ export default function TalentPage() {
                     )}
                   </td>
                   <td className={cn(td, 'px-2 text-xs text-muted-foreground')}>{fmtDate(t.createdAt)}</td>
-                  <td className="border-b p-0 text-center">
-                    {can('candidates.delete') && (
-                      <Button variant="ghost" size="icon-xs" title="Delete from pool" onClick={() => confirm(`Remove ${t.name} from the Talent Pool? Their candidate rows in projects stay.`) && deleteTalent(t.id)}>
-                        <Trash2 className="text-destructive" />
-                      </Button>
-                    )}
+                  <td className="sticky right-0 z-10 border-b border-l bg-background p-0 group-hover:bg-muted">
+                    <div className="flex items-center justify-end gap-1 px-1.5">
+                      {!ro && (
+                        <Button size="xs" variant={inProj.length === 0 ? 'default' : 'outline'} onClick={() => setProcessing([t.id])}>
+                          <ArrowRightCircle /> Process
+                        </Button>
+                      )}
+                      {can('candidates.delete') && (
+                        <Button variant="ghost" size="icon-xs" title="Delete from pool" onClick={() => confirm(`Remove ${t.name} from the Talent Pool? Their candidate rows in projects stay.`) && deleteTalent(t.id)}>
+                          <Trash2 className="text-destructive" />
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )
@@ -183,6 +172,7 @@ export default function TalentPage() {
         </table>
       </div>
       <ImportDialog open={importing} onOpenChange={setImporting} kind="pool" />
+      <ProcessTalentDialog talentIds={processing} onClose={() => setProcessing([])} onDone={() => setSel(new Set())} />
     </div>
   )
 }

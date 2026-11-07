@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Empty, Field, HealthBadge, PageHeader, pageCls } from '@/components/pm/ui'
 import { useCan, useStore } from '@/store'
-import { HEALTH, PHASES, effectiveStatus, invoiceTotal, money, outstanding } from '@/lib/pm'
+import { HEALTH, PHASES, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import type { Health } from '@/types'
@@ -28,6 +28,8 @@ export default function PmProjects() {
     (status === 'all' || p.status === status) && (!health || p.info.health === health) &&
     (!q || `${p.name} ${p.info.client} ${p.info.manager}`.toLowerCase().includes(q.toLowerCase()))), [projects, q, status, health])
 
+  // A column shows when at least one listed project uses that field; other rows show a dash.
+  const used = (f: keyof ReturnType<typeof fieldsOf>) => rows.some((p) => fieldsOf(p)[f])
   const live = projects.filter((p) => p.status === 'active')
   const trouble = live.filter((p) => p.info.health === 'at_risk' || p.info.health === 'off_track').length
   const totalBudget = live.reduce((a, p) => a + (p.info.budget ?? 0), 0)
@@ -75,23 +77,34 @@ export default function PmProjects() {
           <div className="overflow-x-auto rounded-xl border bg-card">
             <table className="w-full min-w-[60rem] text-sm">
               <thead><tr>
-                <th className={th}>Project</th><th className={th}>Client</th><th className={th}>Health</th><th className={th}>Phase</th>
-                <th className={th}>Dates</th><th className={cn(th, 'text-right')}>Budget</th><th className={cn(th, 'text-right')}>Invoices</th><th className={th} />
+                <th className={th}>Project</th>
+                {used('client') && <th className={th}>Client</th>}
+                {used('health') && <th className={th}>Status</th>}
+                {used('phase') && <th className={th}>Phase</th>}
+                {(used('startDate') || used('endDate')) && <th className={th}>Dates</th>}
+                {used('budget') && <th className={cn(th, 'text-right')}>Budget</th>}
+                <th className={cn(th, 'text-right')}>Invoices</th><th className={th} />
               </tr></thead>
               <tbody>
                 {rows.map((p) => {
                   const inv = invoices.filter((i) => i.projectId === p.id)
                   const owedP = outstanding(inv)
                   const late = inv.filter((i) => effectiveStatus(i) === 'overdue').length
+                  const fl = fieldsOf(p)
+                  const dash = <span className="text-muted-foreground">—</span>
                   const billed = inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0)
                   return (
                     <tr key={p.id} className="cursor-pointer border-t hover:bg-muted/30" onClick={() => open(p.id, '/pm/info')}>
-                      <td className="px-3 py-2.5"><div className="font-medium">{p.name}{p.status === 'archived' && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">archived</span>}</div><div className="text-xs text-muted-foreground">PM {p.info.manager || '—'}</div></td>
-                      <td className="px-3 py-2.5">{p.info.client || <span className="text-muted-foreground">—</span>}</td>
-                      <td className="px-3 py-2.5"><HealthBadge health={p.info.health} /></td>
-                      <td className="px-3 py-2.5">{PHASES.find((x) => x.value === p.info.phase)?.label}</td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{fmtDate(p.info.startDate) || '—'} → {fmtDate(p.info.endDate) || '—'}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{money(p.info.budget)}</td>
+                      <td className="px-3 py-2.5"><div className="font-medium">{p.name}{p.status === 'archived' && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">archived</span>}</div>{fl.manager && <div className="text-xs text-muted-foreground">PM {p.info.manager || '—'}</div>}</td>
+                      {used('client') && <td className="px-3 py-2.5">{fl.client ? p.info.client || dash : dash}</td>}
+                      {used('health') && <td className="px-3 py-2.5">{fl.health ? <HealthBadge health={p.info.health} /> : dash}</td>}
+                      {used('phase') && <td className="px-3 py-2.5">{fl.phase ? PHASES.find((x) => x.value === p.info.phase)?.label : dash}</td>}
+                      {(used('startDate') || used('endDate')) && (
+                        <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">
+                          {!fl.startDate && !fl.endDate ? dash : fl.startDate && fl.endDate ? `${fmtDate(p.info.startDate) || '—'} → ${fmtDate(p.info.endDate) || '—'}` : fl.startDate ? `From ${fmtDate(p.info.startDate) || '—'}` : `Until ${fmtDate(p.info.endDate) || '—'}`}
+                        </td>
+                      )}
+                      {used('budget') && <td className="px-3 py-2.5 text-right tabular-nums">{fl.budget ? money(p.info.budget) : dash}</td>}
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         {inv.length === 0 ? <span className="text-muted-foreground">—</span> : (
                           <div><div>{money(owedP)} <span className="text-xs text-muted-foreground">owed</span></div>

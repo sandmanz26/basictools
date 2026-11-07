@@ -37,7 +37,7 @@ export function TextCell({
 }
 
 export function NumberCell({
-  value, onCommit, readOnly, scale = 1, placeholder, format,
+  value, onCommit, readOnly, scale = 1, placeholder, format, align = 'right',
 }: {
   value: number | null
   onCommit: (v: number | null) => void
@@ -45,19 +45,20 @@ export function NumberCell({
   scale?: number
   placeholder?: string
   format?: (n: number) => string
+  align?: 'right' | 'center'
 }) {
   const display = value == null ? '' : String(value / scale)
   const [v, setV] = useState(display)
   const [focus, setFocus] = useState(false)
   useEffect(() => setV(display), [display])
   const shown = value == null ? '' : format ? format(value) : String(value)
-  if (readOnly) return <div className="px-2 py-1.5 text-right text-[13px] tabular-nums">{shown || <span className="text-muted-foreground/50">—</span>}</div>
+  if (readOnly) return <div className={cn('px-2 py-1.5 text-[13px] tabular-nums', align === 'center' ? 'text-center' : 'text-right')}>{shown || <span className="text-muted-foreground/50">—</span>}</div>
   return (
     <input
       inputMode="numeric"
       value={focus ? v : shown}
       placeholder={placeholder}
-      className={cn(base, 'text-right tabular-nums')}
+      className={cn(base, 'tabular-nums', align === 'center' ? 'text-center' : 'text-right')}
       onFocus={() => setFocus(true)}
       onChange={(e) => setV(e.target.value.replace(/[^\d.]/g, ''))}
       onBlur={() => {
@@ -104,6 +105,34 @@ export function SelectCell({
           </option>
         ))}
       </select>
+    </div>
+  )
+}
+
+const jt = (n: number) => (n / 1_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt'
+
+/** Expected salary as "min – max" in million IDR, kept compact so the two numbers sit together. */
+export function RangeCell({
+  min, max, onCommit, readOnly,
+}: {
+  min: number | null
+  max: number | null
+  onCommit: (min: number | null, max: number | null) => void
+  readOnly?: boolean
+}) {
+  if (readOnly) {
+    const t = min == null && max == null ? '' : min != null && max != null && min !== max ? `${jt(min)} – ${jt(max)}` : jt((min ?? max)!)
+    return <div className="px-2 py-1.5 text-center text-[13px] tabular-nums whitespace-nowrap">{t || <span className="text-muted-foreground/50">—</span>}</div>
+  }
+  return (
+    <div className="flex items-center justify-center gap-0.5 px-1">
+      <div className="w-[4.75rem]">
+        <NumberCell align="center" value={min} scale={1_000_000} format={jt} placeholder="Min" onCommit={(v) => onCommit(v, max != null && v != null && max < v ? v : max)} />
+      </div>
+      <span className="text-muted-foreground">–</span>
+      <div className="w-[4.75rem]">
+        <NumberCell align="center" value={max} scale={1_000_000} format={jt} placeholder="Max" onCommit={(v) => onCommit(min != null && v != null && min > v ? v : min, v)} />
+      </div>
     </div>
   )
 }

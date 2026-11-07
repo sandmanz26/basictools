@@ -94,6 +94,7 @@ export function parseResult(raw: string): RoundResult {
   const t = clean(raw)
   if (!t) return 'pending'
   if (/no.?show/.test(t)) return 'no_show'
+  if (/(re-?schedul|jadwal ulang|reschedule)/.test(t)) return 'rescheduled'
   if (/(pass|lulus|lolos|ok|accept)/.test(t)) return 'pass'
   if (/(fail|gagal|reject|tidak lolos)/.test(t)) return 'fail'
   return 'pending'
@@ -200,7 +201,7 @@ export function candidateHeaders(stages: Stage[], opts: { salary: boolean; conta
     'Name', ...(opts.contact ? ['Email', 'Phone'] : []), 'Position', 'Source', 'Tech Screening',
     ...(opts.salary ? ['Salary Min', 'Salary Max'] : []),
     'Working Arrangement', 'Stage', 'Next Step',
-    ...stages.filter((s) => s.interview).flatMap((s) => [`${s.label} Date`, `${s.label} Time`, `${s.label} Result`]),
+    ...stages.filter((s) => s.interview).flatMap((s) => [`${s.label} Date`, `${s.label} Time`, `${s.label} Result`, `${s.label} Reschedules`]),
     'HR Owner', 'Applied At', 'Archived', 'Notes',
   ]
 }
@@ -214,7 +215,7 @@ export function candidatesToTable(
     positions.find((p) => p.id === c.positionId)?.title ?? '', c.source, c.screeningScore,
     ...(opts.salary ? [c.salaryMin, c.salaryMax] : []),
     c.arrangement, stages.find((s) => s.id === c.stage)?.label ?? c.stage, c.nextStep,
-    ...iv.flatMap((s) => { const r = getRound(c, s.id); return [r.date, r.time, r.result === 'pending' ? '' : RESULT_META[r.result].label] }),
+    ...iv.flatMap((s) => { const r = getRound(c, s.id); return [r.date, r.time, r.result === 'pending' ? '' : RESULT_META[r.result].label, r.history?.length || ''] }),
     c.owner, c.appliedAt, c.archived ? 'yes' : '', c.notes,
   ])
   return [candidateHeaders(stages, opts), ...body]

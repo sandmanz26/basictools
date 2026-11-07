@@ -1,12 +1,13 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CalendarCheck, CircleDollarSign, ListChecks } from 'lucide-react'
 import { Card, HealthBadge, PageHeader, PriorityBadge, Progress, pageCls, usePm } from '@/components/pm/ui'
-import { PHASES, daysBetween, money, riskScore, riskTone, todayStr } from '@/lib/pm'
+import { PHASES, daysBetween, fieldsOf, money, riskScore, riskTone, todayStr } from '@/lib/pm'
 import { fmtDate, stageDot } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
 export default function PmOverview() {
   const { s, project, info, tasks, milestones, risks, budget, updates } = usePm()
+  const fl = fieldsOf(project)
   const today = todayStr()
   const doneIds = new Set(project.pmStages.filter((x) => x.type === 'won').map((x) => x.id))
   const done = tasks.filter((t) => doneIds.has(t.stage)).length
@@ -41,8 +42,8 @@ export default function PmOverview() {
     <div className={pageCls}>
       <div className="mx-auto max-w-6xl space-y-5">
         <PageHeader
-          title={<span className="flex flex-wrap items-center gap-3">{project.name} <HealthBadge health={info.health} /></span>}
-          desc={`${PHASES.find((p) => p.value === info.phase)?.label} phase · ${info.methodology} · PM ${info.manager || '—'}`}
+          title={<span className="flex flex-wrap items-center gap-3">{project.name} {fl.health && <HealthBadge health={info.health} />}</span>}
+          desc={[fl.phase && `${PHASES.find((p) => p.value === info.phase)?.label} phase`, fl.methodology && info.methodology, fl.manager && `PM ${info.manager || '—'}`, !fl.endDate && fl.startDate && info.startDate && `Started ${fmtDate(info.startDate)}`].filter(Boolean).join(' · ') || undefined}
         />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -52,18 +53,36 @@ export default function PmOverview() {
             <Progress value={progress} />
             <div className="mt-2 text-xs text-muted-foreground">{done} of {tasks.length} tasks done{overdue.length > 0 && <span className="text-red-600"> · {overdue.length} overdue</span>}</div>
           </Card>
+          {(fl.startDate || fl.endDate) && (
           <Card>
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><CalendarCheck className="size-4" /> Schedule</div>
-            <div className="mt-1 text-2xl font-semibold">{left == null ? '—' : left >= 0 ? `${left} days left` : `${-left} days over`}</div>
-            <Progress value={total ? (elapsed / total) * 100 : 0} tone="bg-sky-500" />
-            <div className="mt-2 text-xs text-muted-foreground">{fmtDate(info.startDate)} → {fmtDate(info.endDate)}</div>
+            {fl.endDate && fl.startDate ? (
+              <>
+                <div className="mt-1 text-2xl font-semibold">{left == null ? '—' : left >= 0 ? `${left} days left` : `${-left} days over`}</div>
+                <Progress value={total ? (elapsed / total) * 100 : 0} tone="bg-sky-500" />
+                <div className="mt-2 text-xs text-muted-foreground">{fmtDate(info.startDate)} → {fmtDate(info.endDate)}</div>
+              </>
+            ) : fl.startDate ? (
+              <>
+                <div className="mt-1 text-2xl font-semibold">{info.startDate ? `Day ${Math.max(0, daysBetween(info.startDate, today)) + 1}` : '—'}</div>
+                <div className="mt-2 text-xs text-muted-foreground">Started {fmtDate(info.startDate) || '—'}</div>
+              </>
+            ) : (
+              <>
+                <div className="mt-1 text-2xl font-semibold">{left == null ? '—' : left >= 0 ? `${left} days left` : `${-left} days over`}</div>
+                <div className="mt-2 text-xs text-muted-foreground">Due {fmtDate(info.endDate) || '—'}</div>
+              </>
+            )}
           </Card>
+          )}
+          {fl.budget && (
           <Card>
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><CircleDollarSign className="size-4" /> Budget used</div>
             <div className="mt-1 text-2xl font-semibold">{spentPct}%</div>
             <Progress value={spentPct} tone={spentPct > 90 ? 'bg-red-500' : spentPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'} />
             <div className="mt-2 text-xs text-muted-foreground">{money(actual)} of {money(budgetCap)}</div>
           </Card>
+          )}
           <Card>
             <div className="flex items-center gap-2 text-xs text-muted-foreground"><AlertTriangle className="size-4" /> Open risks & issues</div>
             <div className="mt-1 text-2xl font-semibold">{openRisks.length}</div>

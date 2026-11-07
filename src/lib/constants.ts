@@ -51,7 +51,13 @@ export const RESULT_META: Record<RoundResult, { label: string; tone: string }> =
   pass: { label: 'Pass', tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' },
   fail: { label: 'Fail', tone: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' },
   no_show: { label: 'No show', tone: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300' },
+  rescheduled: { label: 'Rescheduled', tone: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
 }
+
+export const RESCHEDULE_REASONS = ['Candidate could not attend', 'Candidate asked to move', 'Interviewer unavailable', 'Other']
+
+/** How many times this interview was moved. */
+export const reschedules = (c: Candidate, stageId: string) => c.rounds[stageId]?.history?.length ?? 0
 
 export const ARRANGEMENTS: WorkArrangement[] = ['WFO', 'Hybrid', 'WFH', 'Any']
 export const SOURCES = ['LinkedIn', 'JobStreet', 'Glints', 'Referral', 'Website', 'Kalibrr', 'Headhunter']

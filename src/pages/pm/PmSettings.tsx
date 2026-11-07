@@ -2,11 +2,15 @@ import { Switch } from '@/components/ui/switch'
 import { MicrosoftCard } from '@/components/MicrosoftCard'
 import { StageEditor } from '@/components/StageEditor'
 import { Card, PageHeader, pageCls, usePm } from '@/components/pm/ui'
-import { DEFAULT_PM_STAGES, PM_FEATURES } from '@/lib/pm'
+import { Button } from '@/components/ui/button'
+import { DEFAULT_PM_STAGES, FIELD_PRESETS, PM_FEATURES, PM_FIELDS, fieldsOf } from '@/lib/pm'
 
 export default function PmSettings() {
   const { s, project, tasks, canEdit } = usePm()
   const f = project.pmFeatures
+  const fields = fieldsOf(project)
+  const groups = [...new Set(PM_FIELDS.map((x) => x.group))]
+  const activePreset = FIELD_PRESETS.find((p) => PM_FIELDS.every((x) => p.make()[x.id] === fields[x.id]))?.id
   return (
     <div className={pageCls}>
       <div className="mx-auto max-w-4xl space-y-5">
@@ -20,6 +24,32 @@ export default function PmSettings() {
                 <Switch disabled={!canEdit} checked={f[x.id]} onCheckedChange={(v) => s.setPmFeature(project.id, x.id, v)} />
                 <div><div className="text-sm font-medium">{x.label}</div><div className="text-xs text-muted-foreground">{x.hint}</div></div>
               </label>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Project info fields">
+          <p className="mb-3 text-sm text-muted-foreground">
+            Choose which fields this project tracks. Hidden fields disappear from the project info page, the project list and the dashboard; their values are kept if you switch them back on.
+          </p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {FIELD_PRESETS.map((p) => (
+              <Button key={p.id} size="sm" variant={activePreset === p.id ? 'default' : 'outline'} disabled={!canEdit} title={p.hint} onClick={() => s.setPmFields(project.id, p.make())}>
+                {p.label}
+              </Button>
+            ))}
+            {!activePreset && <span className="self-center text-xs text-muted-foreground">Custom selection</span>}
+          </div>
+          <div className="grid gap-x-8 gap-y-4 sm:grid-cols-3">
+            {groups.map((g) => (
+              <div key={g} className="space-y-1">
+                <div className="pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{g}</div>
+                {PM_FIELDS.filter((x) => x.group === g).map((x) => (
+                  <label key={x.id} className="flex items-center gap-2.5 py-1 text-sm">
+                    <Switch disabled={!canEdit} checked={fields[x.id]} onCheckedChange={(v) => s.setPmFields(project.id, { ...fields, [x.id]: v })} /> {x.label}
+                  </label>
+                ))}
+              </div>
             ))}
           </div>
         </Card>

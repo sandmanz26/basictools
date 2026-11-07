@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/store'
 import type { Candidate, Position, RoundResult, Stage } from '@/types'
-import { ARRANGEMENTS, RESULT_META, SOURCES, getRound, stageTone } from '@/lib/constants'
-import { NumberCell, SelectCell, TextCell } from './cells'
+import { ARRANGEMENTS, RESULT_META, SOURCES, getRound, reschedules, stageTone } from '@/lib/constants'
+import { NumberCell, RangeCell, SelectCell, TextCell } from './cells'
 
 export interface ViewMode {
   readOnly: boolean
@@ -27,7 +27,7 @@ export function CandidateTable({
   mode: ViewMode
   onOpen: (id: string) => void
 }) {
-  const { updateCandidate, updateRound, setRoundResult, deleteCandidate, archiveCandidate, moveCandidate } = useStore()
+  const { updateCandidate, updateRound, setRoundResult, rescheduleRound, deleteCandidate, archiveCandidate, moveCandidate } = useStore()
   const [sort, setSort] = useState<{ key: SortKey | null; dir: 1 | -1 }>({ key: null, dir: 1 })
   const interviews = stages.filter((s) => s.interview)
   const stageById = (id: string) => stages.find((s) => s.id === id)
@@ -52,7 +52,11 @@ export function CandidateTable({
 
   const ro = mode.readOnly
   const posOpts = positions.map((p) => ({ value: p.id, label: p.title }))
-  const resultOpts = (Object.keys(RESULT_META) as RoundResult[]).map((r) => ({ value: r, label: RESULT_META[r].label }))
+  // "Reschedule" is an action, not a stored result: it archives the attempt and opens a new slot.
+  const resultOpts = [
+    ...(['pending', 'pass', 'fail', 'no_show'] as RoundResult[]).map((r) => ({ value: r, label: RESULT_META[r].label })),
+    { value: '__resched', label: '↻ Reschedule' },
+  ]
   const cell = 'border-b border-r p-0 align-middle'
   const colCount = 10 + interviews.length * 3
 
@@ -66,7 +70,7 @@ export function CandidateTable({
             <th rowSpan={2} className={cn(th, 'w-44')}>Position</th>
             <th rowSpan={2} className={cn(th, 'w-28')}>Source</th>
             <th rowSpan={2} className={cn(th, 'w-32')}><SortLabel k="score">Tech Screening</SortLabel></th>
-            {mode.showSalary && <th rowSpan={2} className={cn(th, 'w-72')}><SortLabel k="salary">Expected Salary (min – max)</SortLabel></th>}
+            {mode.showSalary && <th rowSpan={2} className={cn(th, 'w-48')}><SortLabel k="salary">Expected Salary</SortLabel></th>}
             <th rowSpan={2} className={cn(th, 'w-28')}>Working</th>
             <th rowSpan={2} className={cn(th, 'w-44')}><SortLabel k="stage">Stage</SortLabel></th>
             <th rowSpan={2} className={cn(th, 'w-72')}>Next Step</th>
@@ -110,13 +114,7 @@ export function CandidateTable({
                 </td>
                 {mode.showSalary && (
                   <td className={cell}>
-                    <div className="flex items-center">
-                      <NumberCell value={c.salaryMin} readOnly={ro} scale={1_000_000} format={(n) => (n / 1_000_000).toLocaleString('id-ID') + ' jt'} placeholder="Min (jt)"
-                        onCommit={(v) => updateCandidate(c.id, { salaryMin: v, salaryMax: c.salaryMax != null && v != null && c.salaryMax < v ? v : c.salaryMax })} />
-                      <span className="text-muted-foreground">–</span>
-                      <NumberCell value={c.salaryMax} readOnly={ro} scale={1_000_000} format={(n) => (n / 1_000_000).toLocaleString('id-ID') + ' jt'} placeholder="Max (jt)"
-                        onCommit={(v) => updateCandidate(c.id, { salaryMax: v, salaryMin: c.salaryMin != null && v != null && c.salaryMin > v ? v : c.salaryMin })} />
-                    </div>
+                    <RangeCell min={c.salaryMin} max={c.salaryMax} readOnly={ro} onCommit={(mn, mx) => updateCandidate(c.id, { salaryMin: mn, salaryMax: mx })} />
                   </td>
                 )}
                 <td className={cell}><SelectCell value={c.arrangement} options={ARRANGEMENTS.map((a) => ({ value: a, label: a }))} readOnly={ro} onChange={(v) => updateCandidate(c.id, { arrangement: v as Candidate['arrangement'] })} /></td>
@@ -130,7 +128,15 @@ export function CandidateTable({
                     <td key={s.id + 'd'} className={cell}><TextCell type="date" value={rd.date} readOnly={ro} onCommit={(v) => updateRound(c.id, s.id, { date: v })} /></td>,
                     <td key={s.id + 't'} className={cell}><TextCell type="time" value={rd.time} readOnly={ro} onCommit={(v) => updateRound(c.id, s.id, { time: v })} /></td>,
                     <td key={s.id + 'r'} className={cell}>
-                      <SelectCell value={rd.result} options={resultOpts} readOnly={ro} tone={RESULT_META[rd.result].tone} onChange={(v) => setRoundResult(c.id, s.id, v as RoundResult)} />
+                      <div className="relative">
+                        <SelectCell
+                          value={rd.result} options={resultOpts} readOnly={ro} tone={RESULT_META[rd.result].tone}
+                          onChange={(v) => (v === '__resched' ? rescheduleRound(c.id, s.id, 'Candidate could not attend') : setRoundResult(c.id, s.id, v as RoundResult))}
+                        />
+                        {reschedules(c, s.id) > 0 && (
+                          <span title={`Interview moved ${reschedules(c, s.id)}×. This is attempt ${reschedules(c, s.id) + 1}.`} className="pointer-events-none absolute top-0.5 right-0.5 rounded bg-sky-600 px-1 text-[9px] leading-3.5 font-semibold text-white">↻{reschedules(c, s.id)}</span>
+                        )}
+                      </div>
                     </td>,
                   ]
                 })}
