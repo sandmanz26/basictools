@@ -129,3 +129,9 @@ export function invoiceEmail(i: Invoice, projectName: string, sender: string): {
     body: `Dear ${i.clientName || 'Sir/Madam'},\n\nPlease find the invoice for ${projectName} below.\n\nInvoice: ${i.number}\nIssued: ${longDate(i.issueDate)}\nDue: ${longDate(i.dueDate)}\n\n${lines}\n\nSubtotal: ${fullIdr(invoiceSubtotal(i))}${tax}\nTotal due: ${fullIdr(invoiceTotal(i))}\n${i.notes ? `\n${i.notes}\n` : ''}\nThank you,\n${sender}`,
   }
 }
+
+/** Next free number like INV-2026-004, counting every invoice so numbers never repeat. */
+export function nextInvoiceNumber(invoices: Invoice[], issueDate = todayStr()) {
+  const max = invoices.reduce((m, i) => Math.max(m, Number(i.number.match(/(\d+)$/)?.[1] ?? 0)), 0)
+  return `INV-${issueDate.slice(0, 4)}-${String(max + 1).padStart(3, '0')}`
+}

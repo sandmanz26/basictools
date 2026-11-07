@@ -57,13 +57,18 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 export const toHtml = (text: string) => `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${esc(text).replace(/\r?\n/g, '<br>')}</div>`
 
 /** Send one email as the signed-in user via Microsoft Graph. It also lands in the user's Sent Items. */
-export async function sendMail(cfg: MsConfig, to: string, subject: string, body: string): Promise<void> {
+export interface MailAttachment { name: string; contentType: string; base64: string }
+
+export async function sendMail(cfg: MsConfig, to: string, subject: string, body: string, attachments: MailAttachment[] = []): Promise<void> {
   const accessToken = await token(cfg)
   const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      message: { subject, body: { contentType: 'HTML', content: toHtml(body) }, toRecipients: [{ emailAddress: { address: to } }] },
+      message: {
+        subject, body: { contentType: 'HTML', content: toHtml(body) }, toRecipients: [{ emailAddress: { address: to } }],
+        ...(attachments.length ? { attachments: attachments.map((a) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.name, contentType: a.contentType, contentBytes: a.base64 })) } : {}),
+      },
       saveToSentItems: true,
     }),
   })

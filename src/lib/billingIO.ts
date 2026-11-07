@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid'
 import type { Frequency, Project, Schedule } from '@/types'
 import { parseDate } from '@/lib/importExport'
 import { parseValue } from '@/lib/leadsIO'
-import { repeatLabel } from '@/lib/billing'
+import { dayLabel, repeatLabel } from '@/lib/billing'
 
 const clean = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
 
@@ -26,10 +26,14 @@ const kindOf = (v: string): Schedule['kind'] => (/(pay|bayar|hutang|vendor|expen
 const freqOf = (v: string): Frequency => {
   const t = clean(v)
   if (/(once|one|sekali|1x)/.test(t)) return 'once'
+  if (/(bi-?week|2 week|two week|2 minggu|dua minggu|setiap 2)/.test(t)) return 'biweekly'
+  if (/(week|minggu|mingguan)/.test(t)) return 'weekly'
   if (/(quarter|kuartal|3 bulan|triwulan)/.test(t)) return 'quarterly'
   if (/(year|tahun|annual)/.test(t)) return 'yearly'
   return 'monthly'
 }
+const WD = [/(sun|minggu|ahad)/, /(mon|senin)/, /(tue|selasa)/, /(wed|rabu)/, /(thu|kamis)/, /(fri|jumat|jum'at)/, /(sat|sabtu)/]
+const weekdayFrom = (v: string): number | undefined => { const i = WD.findIndex((r) => r.test(clean(v))); return i >= 0 ? i : undefined }
 const dayOf = (v: string): number => {
   const t = clean(v)
   if (!t) return 0
@@ -61,6 +65,7 @@ export function parseSchedules(rows: string[][], projects: Project[], today: str
     out.list.push({
       id: 'sc-' + nanoid(6), kind, projectId: proj?.id ?? '', party: g.party ?? proj?.info.client ?? '', title: g.title ?? (kind === 'payable' ? 'Bill' : 'Invoice'),
       amount: g.amount ? parseValue(g.amount) : null, frequency: freqOf(g.frequency ?? ''), day: dayOf(g.day ?? ''),
+      ...(/(week|minggu)/.test(clean(g.frequency ?? '')) ? { weekday: weekdayFrom(g.day ?? '') } : {}),
       startDate: parseDate(g.startDate ?? '') || proj?.info.startDate || today, endDate: parseDate(g.endDate ?? '') || proj?.info.endDate || '',
       leadDays: g.leadDays ? Math.max(0, parseInt(g.leadDays, 10) || 0) : kind === 'receivable' ? 5 : 3, termDays: g.termDays ? Math.max(0, parseInt(g.termDays, 10) || 0) : 14,
       pic: g.pic ?? proj?.info.manager ?? '', notes: g.notes ?? '', active: true,
@@ -81,7 +86,7 @@ export const scheduleTemplate = () => [
 export function schedulesToTable(list: Schedule[], projects: Project[]): (string | number)[][] {
   return [SCHEDULE_HEADERS, ...list.map((s) => [
     s.kind === 'receivable' ? 'Invoice' : 'Bill', projects.find((p) => p.id === s.projectId)?.name ?? '', s.party, s.title, s.amount ?? '',
-    s.frequency === 'once' ? 'Once' : repeatLabel(s).split(' · ')[0], s.frequency === 'once' ? '' : s.day === 0 ? 'end of month' : s.day,
+    s.frequency === 'once' ? 'Once' : repeatLabel(s).split(' · ')[0], s.frequency === 'once' ? '' : s.frequency === 'weekly' || s.frequency === 'biweekly' ? dayLabel(s) : s.day === 0 ? 'end of month' : s.day,
     s.startDate, s.endDate, s.leadDays, s.kind === 'receivable' ? s.termDays : '', s.pic, s.notes,
   ])]
 }

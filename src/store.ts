@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import type {
   Broadcast,
   Candidate,
+  BillingProfile,
   Invoice,
   Schedule,
   ScheduleEvent,
@@ -29,6 +30,8 @@ import type {
 } from '@/types'
 import { SCHEDULES } from '@/data/mock'
 import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
+import { eventKey, localDay, localToday, occurrenceDates, periodLabel, addDays as addDaysStr } from '@/lib/billing'
+import { nextInvoiceNumber } from '@/lib/pm'
 import { FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
@@ -82,6 +85,10 @@ interface State {
   setScheduleEvent: (key: string, patch: Partial<ScheduleEvent> | null) => void
   importSchedules: (list: Schedule[]) => void
   addInvoice: (i: Invoice) => void
+  billingProfile: BillingProfile
+  setBillingProfile: (patch: Partial<BillingProfile>) => void
+  createInvoiceFromSchedule: (scheduleId: string, date: string) => string | null
+  draftDueInvoices: (today: string) => number
   updateInvoice: (id: string, patch: Partial<Invoice>) => void
   deleteInvoice: (id: string) => void
   setPmFeature: (projectId: string, feature: keyof Project['pmFeatures'], on: boolean) => void
@@ -175,6 +182,7 @@ const seed = () => ({
   emails: [] as SentEmail[],
   invoices: INVOICES,
   schedules: SCHEDULES,
+  billingProfile: { company: '', address: '', email: '', phone: '', taxId: '', bankName: '', bankAccount: '', bankHolder: '', paymentNote: '' } as BillingProfile,
   scheduleEvents: {} as Record<string, ScheduleEvent>,
   broadcasts: [] as Broadcast[],
   msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
@@ -289,8 +297,79 @@ export const useStore = create<State>()(
       }),
       importSchedules: (list) => set((s) => ({ schedules: [...list, ...s.schedules] })),
       addInvoice: (i) => set((s) => ({ invoices: [i, ...s.invoices] })),
-      updateInvoice: (id, patch) => set((s) => ({ invoices: s.invoices.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
-      deleteInvoice: (id) => set((s) => ({ invoices: s.invoices.filter((x) => x.id !== id) })),
+      // Keep the billing reminders in step with the document: sending releases it, paying closes it.
+      updateInvoice: (id, patch) =>
+        set((s) => {
+          const prev = s.invoices.find((x) => x.id === id)
+          const next = prev ? { ...prev, ...patch } : undefined
+          const invoices = s.invoices.map((x) => (x.id === id && next ? next : x))
+          if (!next?.scheduleKey) return { invoices }
+          const ev: ScheduleEvent = { issuedAt: '', invoiceNo: '', paidAt: '', skipped: false, ...(s.scheduleEvents[next.scheduleKey] as Partial<ScheduleEvent> | undefined) }
+          const sentNow = next.status !== 'draft' && !ev.issuedAt
+          const paidNow = next.status === 'paid' && !ev.paidAt
+          if (!sentNow && !paidNow && ev.invoiceNo === next.number) return { invoices }
+          return {
+            invoices,
+            scheduleEvents: {
+              ...s.scheduleEvents,
+              [next.scheduleKey]: {
+                ...ev, invoiceId: next.id, invoiceNo: next.number,
+                issuedAt: ev.issuedAt || (next.status !== 'draft' ? (next.sentAt ? localDay(next.sentAt) : next.issueDate) : ''),
+                paidAt: next.status === 'paid' ? ev.paidAt || localToday() : ev.paidAt,
+              },
+            },
+          }
+        }),
+      deleteInvoice: (id) =>
+        set((s) => ({
+          invoices: s.invoices.filter((x) => x.id !== id),
+          // invoiceId '' means deleted on purpose: don't auto-draft it again
+          scheduleEvents: Object.fromEntries(Object.entries(s.scheduleEvents).map(([k, e]) => [k, e.invoiceId === id ? { ...e, invoiceId: '' } : e])),
+        })),
+      setBillingProfile: (patch) => set((s) => ({ billingProfile: { ...s.billingProfile, ...patch } })),
+
+      // One recurring occurrence -> one draft invoice, filled from the schedule (and its project).
+      createInvoiceFromSchedule: (scheduleId, date) => {
+        const s = get()
+        const sch = s.schedules.find((x) => x.id === scheduleId)
+        const project = s.projects.find((p) => p.id === sch?.projectId)
+        if (!sch || sch.kind !== 'receivable' || !project) return null
+        const key = eventKey(sch.id, date)
+        const existing = s.scheduleEvents[key]?.invoiceId
+        if (existing && s.invoices.some((i) => i.id === existing)) return existing
+        const t = sch.template
+        const period = periodLabel(sch, date)
+        const base = t?.items.length ? t.items : [{ id: 'x', description: sch.title || 'Services', qty: 1, unitPrice: sch.amount ?? 0 }]
+        const items = base.map((it, i) => ({ ...it, id: nanoid(5), description: i === 0 && period ? `${it.description} (${period})` : it.description }))
+        const id = 'inv-' + nanoid(6)
+        const number = nextInvoiceNumber(s.invoices, date)
+        const inv: Invoice = {
+          id, projectId: project.id, number, clientName: sch.party || project.info.client,
+          clientEmail: t?.clientEmail || project.info.stakeholders.find((x) => x.contact.includes('@'))?.contact || '',
+          issueDate: date, dueDate: addDaysStr(date, sch.termDays), items, taxPct: t?.taxPct ?? 11, status: 'draft',
+          notes: t?.notes || s.billingProfile.paymentNote, sentAt: '', scheduleKey: key, period,
+        }
+        set((st) => ({
+          invoices: [inv, ...st.invoices],
+          scheduleEvents: { ...st.scheduleEvents, [key]: { issuedAt: '', paidAt: '', skipped: false, ...(st.scheduleEvents[key] as Partial<ScheduleEvent> | undefined), invoiceNo: number, invoiceId: id } },
+        }))
+        return id
+      },
+      // Called on app open: prepare the draft for every invoice whose reminder window has started.
+      draftDueInvoices: (today) => {
+        const s = get()
+        let n = 0
+        for (const sch of s.schedules) {
+          if (!sch.active || sch.kind !== 'receivable' || !sch.projectId || sch.autoDraft === false) continue
+          for (const date of occurrenceDates(sch, addDaysStr(today, -7), addDaysStr(today, sch.leadDays))) {
+            const ev = get().scheduleEvents[eventKey(sch.id, date)]
+            if (ev?.skipped || ev?.issuedAt || ev?.invoiceId === '') continue
+            if (ev?.invoiceId && get().invoices.some((i) => i.id === ev.invoiceId)) continue
+            if (get().createInvoiceFromSchedule(sch.id, date)) n++
+          }
+        }
+        return n
+      },
       setPmFields: (projectId, fields) =>
         set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFields: fields } : p)) })),
       setPmFeature: (projectId, feature, on) =>

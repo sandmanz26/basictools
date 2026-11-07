@@ -30,3 +30,11 @@ export function useBillingAlerts(): number {
   }, [urgent, today])
   return urgent.length
 }
+
+/** Prepare draft invoices for recurring schedules whose reminder window has opened (once per day / when schedules change). */
+export function useAutoDrafts(enabled: boolean) {
+  const draftDueInvoices = useStore((s) => s.draftDueInvoices)
+  const schedules = useStore((s) => s.schedules)
+  const today = localToday()
+  useEffect(() => { if (enabled) draftDueInvoices(today) }, [enabled, draftDueInvoices, schedules, today])
+}

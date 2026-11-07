@@ -354,6 +354,7 @@ export interface InvoiceItem {
   description: string
   qty: number
   unitPrice: number // IDR
+  ref?: string // where the line came from, e.g. "ms:<milestoneId>", so it isn't billed twice
 }
 
 export interface Invoice {
@@ -369,6 +370,21 @@ export interface Invoice {
   status: InvoiceStatus // 'overdue' is derived from sent + past due, see effectiveStatus()
   notes: string
   sentAt: string // ISO, '' until sent
+  scheduleKey?: string // set when a recurring schedule generated this invoice (`${scheduleId}:${date}`)
+  period?: string // e.g. "November 2026" for recurring invoices
+}
+
+/** Company details printed on the invoice PDF. */
+export interface BillingProfile {
+  company: string
+  address: string
+  email: string
+  phone: string
+  taxId: string // NPWP
+  bankName: string
+  bankAccount: string
+  bankHolder: string
+  paymentNote: string // default text for the notes box of new invoices
 }
 
 export type BroadcastStatus = 'running' | 'paused' | 'done'
@@ -389,7 +405,15 @@ export interface Broadcast {
 
 // ---------- Billing schedules & reminders ----------
 
-export type Frequency = 'once' | 'monthly' | 'quarterly' | 'yearly'
+export type Frequency = 'once' | 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'yearly'
+
+/** What a recurring client invoice contains each time. Empty items = one line from the schedule title and amount. */
+export interface ScheduleTemplate {
+  items: InvoiceItem[]
+  taxPct: number
+  clientEmail: string
+  notes: string
+}
 
 /** Something that repeats on a calendar: an invoice we must release to a client, or a bill we must pay a vendor. */
 export interface Schedule {
@@ -400,7 +424,8 @@ export interface Schedule {
   title: string
   amount: number | null // IDR, expected amount
   frequency: Frequency
-  day: number // 1-31, or 0 = last day of the month
+  day: number // monthly+: 1-31, or 0 = last day of the month
+  weekday?: number // weekly / biweekly: 0 = Sunday … 6 = Saturday (default: the weekday of startDate)
   startDate: string // first occurrence is on/after this date
   endDate: string // '' = open ended
   leadDays: number // start reminding this many days before the date
@@ -408,6 +433,8 @@ export interface Schedule {
   pic: string
   notes: string
   active: boolean
+  template?: ScheduleTemplate // receivable: how the generated invoice looks
+  autoDraft?: boolean // receivable: create the draft invoice by itself when the reminder window opens (default on)
 }
 
 /** Progress of one occurrence of a schedule. Keyed by `${scheduleId}:${yyyy-mm-dd}` in the store. */
@@ -416,4 +443,5 @@ export interface ScheduleEvent {
   invoiceNo: string
   paidAt: string // receivable: date money came in; payable: date we paid
   skipped: boolean
+  invoiceId?: string // the generated invoice document, if any
 }

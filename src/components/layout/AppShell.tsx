@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
-import { useBillingAlerts } from '@/lib/alerts'
+import { useAutoDrafts, useBillingAlerts } from '@/lib/alerts'
 import { useAuth } from '@/auth'
 import { canOpen } from '@/lib/access'
 import { NativeSelect } from '@/components/NativeSelect'
@@ -87,6 +87,7 @@ export function AppShell() {
   const logout = useAuth((s) => s.logout)
   const { user, role } = useCurrentUser()
   const billingAlerts = useBillingAlerts()
+  useAutoDrafts(can('pm.invoice'))
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
   // Every module stays in the rail; the ones this role can't open are shown locked.
   const locked = (path: string) => !canOpen(can, path)

@@ -3,11 +3,17 @@ import { MicrosoftCard } from '@/components/MicrosoftCard'
 import { StageEditor } from '@/components/StageEditor'
 import { Card, PageHeader, pageCls, usePm } from '@/components/pm/ui'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/pm/ui'
+import { useCan } from '@/store'
 import { DEFAULT_PM_STAGES, FIELD_PRESETS, PM_FEATURES, PM_FIELDS, fieldsOf } from '@/lib/pm'
 
 export default function PmSettings() {
   const { s, project, tasks, canEdit } = usePm()
   const f = project.pmFeatures
+  const { billingProfile: bp, setBillingProfile } = s
+  const canBilling = useCan()('pm.invoice')
   const fields = fieldsOf(project)
   const groups = [...new Set(PM_FIELDS.map((x) => x.group))]
   const activePreset = FIELD_PRESETS.find((p) => PM_FIELDS.every((x) => p.make()[x.id] === fields[x.id]))?.id
@@ -51,6 +57,21 @@ export default function PmSettings() {
                 ))}
               </div>
             ))}
+          </div>
+        </Card>
+
+        <Card title="Billing profile (printed on invoice PDFs)">
+          <p className="mb-3 text-sm text-muted-foreground">Your company details and bank account. They appear on every downloaded or emailed invoice, shared by all projects.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Company name"><Input disabled={!canBilling} value={bp.company} onChange={(e) => setBillingProfile({ company: e.target.value })} /></Field>
+            <Field label="Tax ID (NPWP)"><Input disabled={!canBilling} value={bp.taxId} onChange={(e) => setBillingProfile({ taxId: e.target.value })} /></Field>
+            <Field label="Address" className="sm:col-span-2"><Textarea disabled={!canBilling} rows={2} value={bp.address} onChange={(e) => setBillingProfile({ address: e.target.value })} /></Field>
+            <Field label="Billing email"><Input disabled={!canBilling} type="email" value={bp.email} onChange={(e) => setBillingProfile({ email: e.target.value })} /></Field>
+            <Field label="Phone"><Input disabled={!canBilling} value={bp.phone} onChange={(e) => setBillingProfile({ phone: e.target.value })} /></Field>
+            <Field label="Bank"><Input disabled={!canBilling} placeholder="e.g. BCA" value={bp.bankName} onChange={(e) => setBillingProfile({ bankName: e.target.value })} /></Field>
+            <Field label="Account number"><Input disabled={!canBilling} value={bp.bankAccount} onChange={(e) => setBillingProfile({ bankAccount: e.target.value })} /></Field>
+            <Field label="Account name" className="sm:col-span-2"><Input disabled={!canBilling} value={bp.bankHolder} onChange={(e) => setBillingProfile({ bankHolder: e.target.value })} /></Field>
+            <Field label="Default invoice note" className="sm:col-span-2"><Textarea disabled={!canBilling} rows={2} placeholder="e.g. Please pay within 14 days and include the invoice number in the transfer." value={bp.paymentNote} onChange={(e) => setBillingProfile({ paymentNote: e.target.value })} /></Field>
           </div>
         </Card>
 

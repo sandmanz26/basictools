@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
-import { Link } from 'react-router-dom'
-import { Bell, BellRing, CheckCheck, Download, Mail, Pencil, Plus, SkipForward, Trash2, Upload } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Bell, BellRing, CalendarPlus, CheckCheck, Download, FilePlus2, FileText, Mail, Pencil, Plus, SkipForward, Trash2, Upload, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,13 +16,14 @@ import { Card, Empty, PageHeader, pageCls } from '@/components/pm/ui'
 import { useCan, useStore } from '@/store'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { sendMail } from '@/lib/microsoft'
-import { KIND_META, buildAgenda, eventKey, localToday, nextOccurrence, needsAction, occurrenceDates, repeatLabel, addDays, type AgendaItem } from '@/lib/billing'
+import { KIND_META, WEEKDAYS, buildAgenda, eventKey, localToday, nextOccurrence, needsAction, occurrenceDates, repeatLabel, addDays, weekdayOf, type AgendaItem } from '@/lib/billing'
+import { downloadIcs, schedulesToIcs } from '@/lib/ics'
 import { schedulesToTable } from '@/lib/billingIO'
 import { downloadCsv } from '@/lib/csv'
 import { enableAlerts, alertsEnabled } from '@/lib/alerts'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
-import type { Schedule } from '@/types'
+import type { Schedule, ScheduleTemplate } from '@/types'
 
 const rp = (n: number | null) => (n == null ? '' : 'Rp ' + n.toLocaleString('id-ID'))
 const when = (it: AgendaItem) =>
@@ -33,7 +34,8 @@ const DAY_OPTS = [{ value: '0', label: 'End of month' }, ...Array.from({ length:
 type Mark = { item: AgendaItem; mode: 'release' | 'paid' }
 
 export default function PmBilling() {
-  const { schedules, scheduleEvents, projects, addSchedule, updateSchedule, deleteSchedule, setScheduleEvent, msConfig } = useStore()
+  const { schedules, scheduleEvents, projects, invoices, billingProfile, addSchedule, updateSchedule, deleteSchedule, setScheduleEvent, createInvoiceFromSchedule, setProject, msConfig } = useStore()
+  const nav = useNavigate()
   const canEdit = useCan()('pm.invoice')
   const ms = useMicrosoft()
   const today = localToday()
@@ -61,6 +63,13 @@ export default function PmBilling() {
     { id: 'later', title: 'Coming up', items: shown.filter((a) => a.state === 'later') },
   ]
 
+  const invoiceOf = (it: AgendaItem) => (it.event?.invoiceId ? invoices.find((i) => i.id === it.event?.invoiceId) : undefined)
+  const goInvoice = (projectId: string, id: string) => { setProject(projectId); nav('/pm/invoices?open=' + id) }
+  const createFor = (it: AgendaItem) => {
+    if (!it.schedule || !it.scheduleDate) return
+    const id = createInvoiceFromSchedule(it.schedule.id, it.scheduleDate)
+    if (id) goInvoice(it.schedule.projectId, id)
+  }
   const startMark = (item: AgendaItem, mode: Mark['mode']) => { setMark({ item, mode }); setMarkDate(today); setMarkNo(item.event?.invoiceNo ?? '') }
   const confirmMark = () => {
     if (!mark?.item.schedule || !mark.item.scheduleDate) return
@@ -124,10 +133,11 @@ export default function PmBilling() {
           <BellRing className="size-4 text-muted-foreground" />
           <span className="text-muted-foreground">Get nudged:</span>
           <Button size="sm" variant="outline" disabled={alertsOn} onClick={async () => setAlertsOn(await enableAlerts())}><Bell /> {alertsOn ? 'Desktop alerts on' : 'Turn on desktop alerts'}</Button>
+          <Button size="sm" variant="outline" onClick={() => downloadIcs('billing-reminders.ics', schedulesToIcs(schedules, projects, (sc) => nextOccurrence(sc, today)))}><CalendarPlus /> Add to my calendar</Button>
           <Button size="sm" variant="outline" disabled={!ms.account || urgent.length === 0} onClick={() => void emailMe()}><Mail /> Email me this list</Button>
           {!ms.account && <span className="text-xs text-muted-foreground">Connect Microsoft in <Link to="/mkt/settings" className="underline">settings</Link> to email yourself.</span>}
           {mailMsg && <span className="text-xs text-muted-foreground">{mailMsg}</span>}
-          <span className="ml-auto text-xs text-muted-foreground">Alerts and the red badge on PM work while this app is open.</span>
+          <span className="ml-auto text-xs text-muted-foreground">Calendar reminders work even when this app is closed.</span>
         </div>
 
         <Tabs defaultValue="reminders">
@@ -155,15 +165,24 @@ export default function PmBilling() {
                       <span className={cn('w-36 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-medium', KIND_META[it.kind].tone)}>{KIND_META[it.kind].label}</span>
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{it.party || projName(it.projectId) || '—'} <span className="font-normal text-muted-foreground">· {it.title}</span></div>
-                        <div className="truncate text-xs text-muted-foreground">{[projName(it.projectId), it.pic && `PIC ${it.pic}`, it.event?.invoiceNo && `Invoice ${it.event.invoiceNo}`].filter(Boolean).join(' · ')}</div>
+                        <div className="truncate text-xs text-muted-foreground">{[projName(it.projectId), it.pic && `PIC ${it.pic}`, it.event?.invoiceNo && `Invoice ${it.event.invoiceNo}`, it.kind === 'release' && invoiceOf(it)?.status === 'draft' && 'Draft ready'].filter(Boolean).join(' · ')}</div>
                       </div>
                       {it.amount != null && <div className="w-32 text-right tabular-nums">{rp(it.amount)}</div>}
-                      {canEdit && it.schedule && (
-                        <div className="flex gap-1.5">
-                          <Button size="sm" onClick={() => startMark(it, it.kind === 'release' ? 'release' : 'paid')}><CheckCheck /> {it.kind === 'release' ? 'Mark released' : it.kind === 'collect' ? 'Mark received' : 'Mark paid'}</Button>
-                          <Button size="icon-sm" variant="ghost" title="Skip this one" onClick={() => skip(it)}><SkipForward /></Button>
-                        </div>
-                      )}
+                      {canEdit && it.schedule && (() => {
+                        const inv = invoiceOf(it)
+                        const proj = it.schedule.projectId
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {it.kind === 'release' && proj && (inv
+                              ? <Button size="sm" onClick={() => goInvoice(proj, inv.id)}><FileText /> {inv.status === 'draft' ? 'Review & send' : 'Open invoice'}</Button>
+                              : <Button size="sm" onClick={() => createFor(it)}><FilePlus2 /> Create invoice</Button>)}
+                            {it.kind === 'release' && !proj && <span className="text-xs text-muted-foreground">Link a project to generate it</span>}
+                            {it.kind === 'collect' && inv && <Button size="sm" variant="outline" onClick={() => goInvoice(proj, inv.id)}><FileText /> Invoice</Button>}
+                            <Button size="sm" variant={it.kind === 'release' && proj ? 'outline' : 'default'} onClick={() => startMark(it, it.kind === 'release' ? 'release' : 'paid')}><CheckCheck /> {it.kind === 'release' ? 'Sent already' : it.kind === 'collect' ? 'Mark received' : 'Mark paid'}</Button>
+                            <Button size="icon-sm" variant="ghost" title="Skip this one" onClick={() => skip(it)}><SkipForward /></Button>
+                          </div>
+                        )
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -216,13 +235,49 @@ export default function PmBilling() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input value={editing.title} placeholder={editing.kind === 'receivable' ? 'e.g. Monthly service fee' : 'e.g. Subscription'} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Amount (Rp)</Label><Input type="number" value={editing.amount ?? ''} onChange={(e) => setEditing({ ...editing, amount: e.target.value ? Number(e.target.value) : null })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PIC</Label><Input value={editing.pic} onChange={(e) => setEditing({ ...editing, pic: e.target.value })} /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Repeats</Label><NativeSelect className="w-full" value={editing.frequency} onChange={(v) => setEditing({ ...editing, frequency: v as Schedule['frequency'] })} options={[{ value: 'monthly', label: 'Every month' }, { value: 'quarterly', label: 'Every 3 months' }, { value: 'yearly', label: 'Every year' }, { value: 'once', label: 'One time' }]} /></div>
-                  {editing.frequency !== 'once' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(editing.day)} onChange={(v) => setEditing({ ...editing, day: Number(v) })} options={DAY_OPTS} /></div>}
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Repeats</Label><NativeSelect className="w-full" value={editing.frequency} onChange={(v) => setEditing({ ...editing, frequency: v as Schedule['frequency'] })} options={[{ value: 'weekly', label: 'Every week' }, { value: 'biweekly', label: 'Every 2 weeks' }, { value: 'monthly', label: 'Every month' }, { value: 'quarterly', label: 'Every 3 months' }, { value: 'yearly', label: 'Every year' }, { value: 'once', label: 'One time' }]} /></div>
+                  {(editing.frequency === 'weekly' || editing.frequency === 'biweekly') && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(weekdayOf(editing))} onChange={(v) => setEditing({ ...editing, weekday: Number(v) })} options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))} /></div>}
+                  {editing.frequency !== 'once' && editing.frequency !== 'weekly' && editing.frequency !== 'biweekly' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(editing.day)} onChange={(v) => setEditing({ ...editing, day: Number(v) })} options={DAY_OPTS} /></div>}
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">{editing.frequency === 'once' ? 'Date' : 'Starts'}</Label><Input type="date" value={editing.startDate} onChange={(e) => setEditing({ ...editing, startDate: e.target.value })} /></div>
                   {editing.frequency !== 'once' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Ends (blank = open)</Label><Input type="date" value={editing.endDate} onChange={(e) => setEditing({ ...editing, endDate: e.target.value })} /></div>}
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Remind me (days before)</Label><Input type="number" min={0} value={editing.leadDays} onChange={(e) => setEditing({ ...editing, leadDays: Math.max(0, Number(e.target.value) || 0) })} /></div>
                   {editing.kind === 'receivable' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays within (days)</Label><Input type="number" min={0} value={editing.termDays} onChange={(e) => setEditing({ ...editing, termDays: Math.max(0, Number(e.target.value) || 0) })} /></div>}
                 </div>
+                {editing.kind === 'receivable' && (() => {
+                  const tpl: ScheduleTemplate = editing.template ?? { items: [], taxPct: 11, clientEmail: '', notes: '' }
+                  const setTpl = (p: Partial<ScheduleTemplate>) => setEditing({ ...editing, template: { ...tpl, ...p } })
+                  const proj = projects.find((x) => x.id === editing.projectId)
+                  return (
+                    <div className="space-y-3 rounded-lg border p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold">Invoice contents</div>
+                        {proj && <Button size="xs" variant="outline" onClick={() => setTpl({ clientEmail: tpl.clientEmail || proj.info.stakeholders.find((x) => x.contact.includes('@'))?.contact || '', notes: tpl.notes || billingProfile.paymentNote })}><WandSparkles /> Fill from project</Button>}
+                      </div>
+                      {!proj && <p className="text-xs text-amber-700">Pick a project above so an invoice can be generated for you.</p>}
+                      <p className="text-xs text-muted-foreground">Used every time this schedule creates an invoice. Leave the lines empty to bill the title and amount above as one line. The period (e.g. “November 2026”) is added automatically.</p>
+                      <div className="space-y-1.5">
+                        {tpl.items.map((it) => (
+                          <div key={it.id} className="grid grid-cols-[1fr_3.5rem_7rem_2rem] items-center gap-1.5">
+                            <Input placeholder="Description" value={it.description} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, description: e.target.value } : x)) })} />
+                            <Input type="number" min={1} value={it.qty} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, qty: Number(e.target.value) || 0 } : x)) })} />
+                            <Input type="number" min={0} placeholder="Unit price" value={it.unitPrice || ''} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, unitPrice: Number(e.target.value) || 0 } : x)) })} />
+                            <Button variant="ghost" size="icon-xs" onClick={() => setTpl({ items: tpl.items.filter((x) => x.id !== it.id) })}><Trash2 className="text-destructive" /></Button>
+                          </div>
+                        ))}
+                        <Button size="xs" variant="outline" onClick={() => setTpl({ items: [...tpl.items, { id: nanoid(5), description: editing.title, qty: 1, unitPrice: editing.amount ?? 0 }] })}><Plus /> Add line</Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Send to (client email)</Label><Input type="email" value={tpl.clientEmail} onChange={(e) => setTpl({ clientEmail: e.target.value })} /></div>
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Tax (%)</Label><Input type="number" min={0} value={tpl.taxPct} onChange={(e) => setTpl({ taxPct: Number(e.target.value) || 0 })} /></div>
+                      </div>
+                      <div className="space-y-1"><Label className="text-xs text-muted-foreground">Invoice notes</Label><Textarea rows={2} placeholder="Payment instructions…" value={tpl.notes} onChange={(e) => setTpl({ notes: e.target.value })} /></div>
+                      <label className="flex items-start gap-2.5 text-sm">
+                        <Switch checked={editing.autoDraft !== false} onCheckedChange={(v) => setEditing({ ...editing, autoDraft: v })} />
+                        <span><b>Prepare the draft for me</b><span className="block text-xs text-muted-foreground">When the reminder window opens ({editing.leadDays} days before), the invoice is created as a draft. You only review and press send. Nothing is emailed automatically.</span></span>
+                      </label>
+                    </div>
+                  )
+                })()}
                 <div className="space-y-1"><Label className="text-xs text-muted-foreground">Notes</Label><Textarea rows={3} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></div>
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                   <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Next dates</div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Archive, ArchiveRestore, CircleDollarSign, FileText, FolderKanban, Plus, Search, ShieldAlert, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,13 +9,14 @@ import { Card, Empty, Field, HealthBadge, PageHeader, pageCls } from '@/componen
 import { useCan, useStore } from '@/store'
 import { HEALTH, PHASES, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
+import { buildAgenda, localToday, needsAction } from '@/lib/billing'
 import { cn } from '@/lib/utils'
 import type { Health } from '@/types'
 
 const th = 'border-b bg-muted px-3 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground'
 
 export default function PmProjects() {
-  const { projects, invoices, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
+  const { schedules, scheduleEvents, projects, invoices, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
   const canEdit = useCan()('pm.edit')
   const nav = useNavigate()
   const [q, setQ] = useState('')
@@ -30,6 +31,10 @@ export default function PmProjects() {
 
   // A column shows when at least one listed project uses that field; other rows show a dash.
   const used = (f: keyof ReturnType<typeof fieldsOf>) => rows.some((p) => fieldsOf(p)[f])
+  const due = needsAction(buildAgenda(schedules, scheduleEvents, projects, localToday())).filter((a) => a.kind === 'release' || a.kind === 'collect')
+  const toRelease = due.filter((a) => a.kind === 'release')
+  const drafts = toRelease.filter((a) => a.event?.invoiceId && invoices.some((i) => i.id === a.event?.invoiceId && i.status === 'draft')).length
+  const lateCollect = due.filter((a) => a.kind === 'collect' && a.state === 'overdue').length
   const live = projects.filter((p) => p.status === 'active')
   const trouble = live.filter((p) => p.info.health === 'at_risk' || p.info.health === 'off_track').length
   const totalBudget = live.reduce((a, p) => a + (p.info.budget ?? 0), 0)
@@ -55,6 +60,18 @@ export default function PmProjects() {
           desc="Monitor every project in one place: status, budget and what clients still owe."
           actions={canEdit && <Button onClick={() => setCreating(true)}><Plus /> New project</Button>}
         />
+
+        {(toRelease.length > 0 || lateCollect > 0) && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <TriangleAlert className="size-4 shrink-0" />
+            <div className="flex-1">
+              <b>Billing needs you.</b>{' '}
+              {toRelease.length > 0 && <>{toRelease.length} invoice{toRelease.length > 1 ? 's' : ''} to release{drafts > 0 && ` (${drafts} draft${drafts > 1 ? 's' : ''} ready to review)`}. </>}
+              {lateCollect > 0 && <>{lateCollect} payment{lateCollect > 1 ? 's' : ''} overdue.</>}
+            </div>
+            <Button size="sm" render={<Link to="/pm/billing" />}>Open billing & reminders</Button>
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><FolderKanban className="size-4" /> Active projects</div><div className="mt-1 text-2xl font-semibold tabular-nums">{live.length}</div><div className="mt-1 text-xs text-muted-foreground">{projects.length - live.length} archived</div></Card>

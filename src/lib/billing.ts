@@ -7,11 +7,15 @@ const utc = (d: string) => Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice
 
 /** Today in the user's own timezone (toISOString would be off by a day early morning in WIB). */
 export const localToday = () => { const n = new Date(); return ymd(n.getFullYear(), n.getMonth(), n.getDate()) }
+export const localDay = (iso: string) => { const n = new Date(iso); return ymd(n.getFullYear(), n.getMonth(), n.getDate()) }
 export const addDays = (d: string, n: number) => { const x = new Date(utc(d) + n * 864e5); return ymd(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate()) }
 export const daysBetween = (from: string, to: string) => Math.round((utc(to) - utc(from)) / 864e5)
 
-export const FREQUENCY: Record<Schedule['frequency'], string> = { once: 'One time', monthly: 'Monthly', quarterly: 'Every 3 months', yearly: 'Yearly' }
-export const dayLabel = (s: Schedule) => (s.frequency === 'once' ? '' : s.day === 0 ? 'end of month' : `day ${s.day}`)
+export const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export const FREQUENCY: Record<Schedule['frequency'], string> = { once: 'One time', weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', quarterly: 'Every 3 months', yearly: 'Yearly' }
+export const weekdayOf = (s: Schedule) => s.weekday ?? new Date(utc(s.startDate || localToday())).getUTCDay()
+export const dayLabel = (s: Schedule) =>
+  s.frequency === 'once' ? '' : s.frequency === 'weekly' || s.frequency === 'biweekly' ? WEEKDAYS[weekdayOf(s)] : s.day === 0 ? 'end of month' : `day ${s.day}`
 export const repeatLabel = (s: Schedule) => (s.frequency === 'once' ? 'One time' : `${FREQUENCY[s.frequency]} · ${dayLabel(s)}`)
 export const eventKey = (scheduleId: string, date: string) => `${scheduleId}:${date}`
 
@@ -20,6 +24,14 @@ export function occurrenceDates(s: Schedule, from: string, to: string): string[]
   if (!s.active || !s.startDate) return []
   const end = s.endDate && s.endDate < to ? s.endDate : to
   if (s.frequency === 'once') return s.startDate >= from && s.startDate <= end ? [s.startDate] : []
+  if (s.frequency === 'weekly' || s.frequency === 'biweekly') {
+    const step = s.frequency === 'weekly' ? 7 : 14
+    let d = addDays(s.startDate, (weekdayOf(s) - new Date(utc(s.startDate)).getUTCDay() + 7) % 7) // first matching weekday on/after the start
+    if (d < from) d = addDays(d, Math.floor(daysBetween(d, from) / step) * step) // skip ahead, keeping the 2-week rhythm
+    const out: string[] = []
+    for (let i = 0; i < 3000 && d <= end; i++, d = addDays(d, step)) if (d >= from) out.push(d)
+    return out
+  }
   const step = s.frequency === 'monthly' ? 1 : s.frequency === 'quarterly' ? 3 : 12
   let y = +s.startDate.slice(0, 4), m = +s.startDate.slice(5, 7) - 1
   const out: string[] = []
@@ -109,3 +121,18 @@ export function buildAgenda(
 export const needsAction = (a: AgendaItem[]) => a.filter((x) => (x.state !== 'later') && x.kind !== 'project_start' && x.kind !== 'project_end')
 
 export const nextOccurrence = (s: Schedule, today: string) => occurrenceDates(s, today, addDays(today, 800))[0] ?? ''
+
+/** Human label for the period an occurrence covers, printed on recurring invoices. */
+export function periodLabel(s: Schedule, date: string): string {
+  const d = new Date(utc(date))
+  const month = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  if (s.frequency === 'monthly') return month
+  if (s.frequency === 'quarterly') return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`
+  if (s.frequency === 'yearly') return String(d.getUTCFullYear())
+  if (s.frequency === 'weekly' || s.frequency === 'biweekly') {
+    const end = new Date(utc(addDays(date, s.frequency === 'weekly' ? 6 : 13)))
+    const f = (x: Date) => x.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
+    return `${f(d)} – ${f(end)} ${end.getUTCFullYear()}`
+  }
+  return ''
+}
