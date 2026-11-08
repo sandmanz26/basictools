@@ -220,13 +220,13 @@ export const CANDIDATES: Candidate[] = [
 ]
 
 const pool = (id: string, name: string, src: string, skills: string, sal: number, arr: WorkArrangement): Talent => ({
-  id, name, email: `${names(name)}@mail.com`, phone: '+62 811-0000-' + id.slice(-3), source: src, skills,
+  id, name, email: `${names(name)}@mail.com`, phone: '+62 811-0000-' + id.slice(-3), source: src, skills, portfolio: `https://portfolio.example.com/${names(name)}`,
   salaryMin: sal, salaryMax: Math.round((sal * 1.25) / 500_000) * 500_000, arrangement: arr, notes: '', createdAt: '2026-11-03',
 })
 
 export const TALENTS: Talent[] = [
   ...BASE.map((c): Talent => ({
-    id: c.talentId, name: c.name, email: c.email, phone: c.phone, source: c.source, skills: '',
+    id: c.talentId, name: c.name, email: c.email, phone: c.phone, source: c.source, skills: '', portfolio: ['t1', 't2', 't5', 't8', 't12', 't13'].includes(c.talentId) ? `https://portfolio.example.com/${names(c.name)}` : '',
     salaryMin: c.salaryMin, salaryMax: c.salaryMax, arrangement: c.arrangement, notes: '', createdAt: c.appliedAt,
   })),
   pool('t101', 'Rizky Maulana', 'LinkedIn', 'React, TypeScript, Next.js', 17_000_000, 'Hybrid'),

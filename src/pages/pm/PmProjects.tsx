@@ -1,33 +1,63 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Archive, ArchiveRestore, CircleDollarSign, FileText, FolderKanban, Plus, Search, ShieldAlert, Trash2, TriangleAlert } from 'lucide-react'
+import { Archive, ArchiveRestore, Download, Eye, CircleDollarSign, FileText, FolderKanban, Plus, Search, ShieldAlert, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Empty, Field, HealthBadge, PageHeader, pageCls } from '@/components/pm/ui'
 import { useCan, useStore } from '@/store'
-import { HEALTH, PHASES, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding } from '@/lib/pm'
+import { PHASES, statusOptions, todayStr, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
+import { ProjectPreview } from '@/components/pm/ProjectPreview'
+import { downloadCsv } from '@/lib/csv'
+import { exportName } from '@/lib/importExport'
 import { buildAgenda, localToday, needsAction } from '@/lib/billing'
 import { cn } from '@/lib/utils'
-import type { Health } from '@/types'
 
 const th = 'border-b bg-muted px-3 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground'
 
 export default function PmProjects() {
-  const { schedules, scheduleEvents, projects, invoices, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
+  const { statuses, schedules, scheduleEvents, projects, invoices, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
   const canEdit = useCan()('pm.edit')
   const nav = useNavigate()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('active')
   const [health, setHealth] = useState('')
+  const [manager, setManager] = useState('')
+  const [client, setClient] = useState('')
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [f, setF] = useState({ name: '', client: '', manager: '', startDate: '', endDate: '', budget: '' })
 
+  const overdueIds = useMemo(() => new Set(invoices.filter((i) => effectiveStatus(i) === 'overdue').map((i) => i.projectId)), [invoices])
+  const managers = useMemo(() => [...new Set(projects.map((p) => p.info.manager).filter(Boolean))].sort(), [projects])
+  const clients = useMemo(() => [...new Set(projects.map((p) => p.info.client).filter(Boolean))].sort(), [projects])
   const rows = useMemo(() => projects.filter((p) =>
     (status === 'all' || p.status === status) && (!health || p.info.health === health) &&
-    (!q || `${p.name} ${p.info.client} ${p.info.manager}`.toLowerCase().includes(q.toLowerCase()))), [projects, q, status, health])
+    (!manager || p.info.manager === manager) && (!client || p.info.client === client) && (!onlyOverdue || overdueIds.has(p.id)) &&
+    (!q || `${p.name} ${p.info.client} ${p.info.manager}`.toLowerCase().includes(q.toLowerCase()))), [projects, q, status, health, manager, client, onlyOverdue, overdueIds])
+  const filtered = !!(q || health || manager || client || onlyOverdue || status !== 'active')
+  const clearFilters = () => { setQ(''); setHealth(''); setManager(''); setClient(''); setOnlyOverdue(false); setStatus('active') }
+
+  const exportRows = () => {
+    const label = (id: string) => statuses.find((x) => x.id === id)?.label ?? id
+    downloadCsv(exportName('projects'), [
+      ['Project', 'State', 'Status', 'Phase', 'Client', 'PM', 'Start', 'End', 'Budget', 'Billed', 'Outstanding', 'Overdue invoices', 'Oldest overdue due date'],
+      ...rows.map((p) => {
+        const fl = fieldsOf(p)
+        const inv = invoices.filter((i) => i.projectId === p.id)
+        const late = inv.filter((i) => effectiveStatus(i) === 'overdue').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+        return [
+          p.name, p.status, fl.health ? label(p.info.health) : '', fl.phase ? PHASES.find((x) => x.value === p.info.phase)?.label ?? '' : '', fl.client ? p.info.client : '', fl.manager ? p.info.manager : '',
+          fl.startDate ? p.info.startDate : '', fl.endDate ? p.info.endDate : '', fl.budget ? p.info.budget ?? '' : '',
+          inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0), outstanding(inv), late.length, late[0]?.dueDate ?? '',
+        ]
+      }),
+    ])
+  }
 
   // A column shows when at least one listed project uses that field; other rows show a dash.
   const used = (f: keyof ReturnType<typeof fieldsOf>) => rows.some((p) => fieldsOf(p)[f])
@@ -36,7 +66,8 @@ export default function PmProjects() {
   const drafts = toRelease.filter((a) => a.event?.invoiceId && invoices.some((i) => i.id === a.event?.invoiceId && i.status === 'draft')).length
   const lateCollect = due.filter((a) => a.kind === 'collect' && a.state === 'overdue').length
   const live = projects.filter((p) => p.status === 'active')
-  const trouble = live.filter((p) => p.info.health === 'at_risk' || p.info.health === 'off_track').length
+  const attention = new Set(statuses.filter((x) => x.attention).map((x) => x.id))
+  const trouble = live.filter((p) => attention.has(p.info.health)).length
   const totalBudget = live.reduce((a, p) => a + (p.info.budget ?? 0), 0)
   const liveIds = new Set(live.map((p) => p.id))
   const liveInvoices = invoices.filter((i) => liveIds.has(i.projectId))
@@ -47,7 +78,7 @@ export default function PmProjects() {
   const create = () => {
     if (!f.name.trim()) return
     const id = addProject(f.name.trim(), '')
-    updateInfo(id, { client: f.client, manager: f.manager, startDate: f.startDate || new Date().toISOString().slice(0, 10), endDate: f.endDate, budget: f.budget ? Number(f.budget) : null })
+    updateInfo(id, { client: f.client, manager: f.manager, startDate: f.startDate || todayStr(), endDate: f.endDate, budget: f.budget ? Number(f.budget) : null })
     setCreating(false); setF({ name: '', client: '', manager: '', startDate: '', endDate: '', budget: '' })
     nav('/pm/info')
   }
@@ -86,8 +117,13 @@ export default function PmProjects() {
             <Input className="h-8 w-60 pl-8" placeholder="Search project, client, PM…" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           <NativeSelect value={status} onChange={setStatus} options={[{ value: 'active', label: 'Active' }, { value: 'archived', label: 'Archived' }, { value: 'all', label: 'All statuses' }]} />
-          <NativeSelect value={health} onChange={setHealth} options={[{ value: '', label: 'Any health' }, ...(Object.keys(HEALTH) as Health[]).map((k) => ({ value: k, label: HEALTH[k].label }))]} />
+          <NativeSelect value={health} onChange={setHealth} options={[{ value: '', label: 'Any status' }, ...statusOptions(statuses)]} />
+          <NativeSelect value={manager} onChange={setManager} options={[{ value: '', label: 'Any PM' }, ...managers.map((m) => ({ value: m, label: m }))]} />
+          <NativeSelect value={client} onChange={setClient} options={[{ value: '', label: 'Any client' }, ...clients.map((m) => ({ value: m, label: m }))]} />
+          <Button variant={onlyOverdue ? 'secondary' : 'outline'} size="sm" onClick={() => setOnlyOverdue(!onlyOverdue)}><TriangleAlert className="size-3.5" /> Overdue invoices</Button>
+          {filtered && <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>}
           <span className="ml-auto text-xs text-muted-foreground tabular-nums">{rows.length} of {projects.length} projects</span>
+          <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={exportRows}><Download className="size-3.5" /> Export ({rows.length})</Button>
         </div>
 
         {rows.length === 0 ? <Empty>No projects match.</Empty> : (
@@ -106,7 +142,8 @@ export default function PmProjects() {
                 {rows.map((p) => {
                   const inv = invoices.filter((i) => i.projectId === p.id)
                   const owedP = outstanding(inv)
-                  const late = inv.filter((i) => effectiveStatus(i) === 'overdue').length
+                  const lateList = inv.filter((i) => effectiveStatus(i) === 'overdue').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+                  const late = lateList.length
                   const fl = fieldsOf(p)
                   const dash = <span className="text-muted-foreground">—</span>
                   const billed = inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0)
@@ -125,10 +162,11 @@ export default function PmProjects() {
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         {inv.length === 0 ? <span className="text-muted-foreground">—</span> : (
                           <div><div>{money(owedP)} <span className="text-xs text-muted-foreground">owed</span></div>
-                            <div className={cn('text-xs', late ? 'font-medium text-red-600' : 'text-muted-foreground')}>{late ? <span className="inline-flex items-center gap-1"><TriangleAlert className="size-3" /> {late} overdue</span> : `${money(billed)} billed`}</div></div>
+                            <div className={cn('text-xs', late ? 'font-medium text-red-600' : 'text-muted-foreground')}>{late ? <span className="inline-flex items-center gap-1"><TriangleAlert className="size-3" /> {late} overdue · due {fmtDate(lateList[0].dueDate)}{late > 1 && ' (oldest)'}</span> : `${money(billed)} billed`}</div></div>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="icon-xs" title="Quick preview" aria-label={`Preview ${p.name}`} onClick={() => setPreview(p.id)}><Eye /></Button>
                         <Button variant="ghost" size="xs" onClick={() => open(p.id, '/pm/invoices')}><FileText /> Invoices</Button>
                         {canEdit && (
                           <>
@@ -146,6 +184,8 @@ export default function PmProjects() {
         )}
       </div>
 
+      <ProjectPreview projectId={preview} onClose={() => setPreview(null)} />
+
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
           <DialogHeader><DialogTitle>New project</DialogTitle><DialogDescription>The basics. You can fill in the rest on the project info page.</DialogDescription></DialogHeader>
@@ -155,7 +195,7 @@ export default function PmProjects() {
             <Field label="Project manager"><Input value={f.manager} onChange={(e) => setF({ ...f, manager: e.target.value })} /></Field>
             <Field label="Start"><Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
             <Field label="Target end"><Input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} /></Field>
-            <Field label="Budget (IDR)" className="sm:col-span-2"><Input type="number" value={f.budget} onChange={(e) => setF({ ...f, budget: e.target.value })} /></Field>
+            <Field label="Budget (IDR)" className="sm:col-span-2"><NumberInput value={f.budget ? Number(f.budget) : null} onValueChange={(v) => setF({ ...f, budget: v == null ? '' : String(v) })} /></Field>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCreating(false)}>Cancel</Button><Button disabled={!f.name.trim()} onClick={create}>Create project</Button></DialogFooter>
         </DialogContent>

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { CalendarDays, Columns3, Download, Mail, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
@@ -207,7 +208,7 @@ export default function MktPipeline() {
                   ))}
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Stage</Label><NativeSelect disabled={!canEdit} className="w-full" value={open.stage} onChange={(v) => upd(open.id, { stage: v })} options={stageOpts} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Source</Label><NativeSelect disabled={!canEdit} className="w-full" value={open.source} onChange={(v) => upd(open.id, { source: v })} options={sourceOpts} /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Deal value (Rp)</Label><Input disabled={!canEdit} type="number" value={open.value ?? ''} onChange={(e) => upd(open.id, { value: e.target.value ? Number(e.target.value) : null })} />{open.value != null && <div className="text-[11px] text-muted-foreground">Rp {idr(open.value)}</div>}</div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Deal value (Rp)</Label><NumberInput disabled={!canEdit} value={open.value} onValueChange={(v) => upd(open.id, { value: v })} />{open.value != null && <div className="text-[11px] text-muted-foreground">Rp {idr(open.value)}</div>}</div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Tags (comma separated)</Label><Input disabled={!canEdit} value={open.tags} onChange={(e) => upd(open.id, { tags: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Next action</Label><Input disabled={!canEdit} value={open.nextAction} onChange={(e) => upd(open.id, { nextAction: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Due</Label><Input disabled={!canEdit} type="date" value={open.nextActionDate} onChange={(e) => upd(open.id, { nextActionDate: e.target.value })} /></div>

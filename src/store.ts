@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { appStorage } from '@/lib/safeStorage'
 import { nanoid } from 'nanoid'
 import type {
   Broadcast,
@@ -24,6 +25,7 @@ import type {
   RoundResult,
   ShareLink,
   StageId,
+  StatusDef,
   Talent,
   TestQuestion,
   User,
@@ -32,7 +34,7 @@ import { SCHEDULES } from '@/data/mock'
 import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
 import { eventKey, localDay, localToday, occurrenceDates, periodLabel, addDays as addDaysStr } from '@/lib/billing'
 import { nextInvoiceNumber } from '@/lib/pm'
-import { FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
+import { DEFAULT_STATUSES, FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_LEAD_COLUMNS, DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
@@ -85,6 +87,10 @@ interface State {
   setScheduleEvent: (key: string, patch: Partial<ScheduleEvent> | null) => void
   importSchedules: (list: Schedule[]) => void
   addInvoice: (i: Invoice) => void
+  statuses: StatusDef[]
+  setStatuses: (list: StatusDef[]) => void
+  remapStatus: (fromId: string, toId: string) => void
+  setPmFeatures: (projectId: string, f: Project['pmFeatures']) => void
   billingProfile: BillingProfile
   setBillingProfile: (patch: Partial<BillingProfile>) => void
   createInvoiceFromSchedule: (scheduleId: string, date: string) => string | null
@@ -182,6 +188,7 @@ const seed = () => ({
   emails: [] as SentEmail[],
   invoices: INVOICES,
   schedules: SCHEDULES,
+  statuses: DEFAULT_STATUSES(),
   billingProfile: { company: '', address: '', email: '', phone: '', taxId: '', bankName: '', bankAccount: '', bankHolder: '', paymentNote: '' } as BillingProfile,
   scheduleEvents: {} as Record<string, ScheduleEvent>,
   broadcasts: [] as Broadcast[],
@@ -208,7 +215,7 @@ const newTalent = (p: Partial<Talent>): Talent => ({
 const fillTalent = (t: Talent, r: Partial<Talent>): Talent => ({
   ...t,
   email: t.email || r.email || '', phone: t.phone || r.phone || '', source: t.source || r.source || '',
-  skills: t.skills || r.skills || '', salaryMin: t.salaryMin ?? r.salaryMin ?? null, salaryMax: t.salaryMax ?? r.salaryMax ?? null,
+  skills: t.skills || r.skills || '', portfolio: t.portfolio || r.portfolio || '', salaryMin: t.salaryMin ?? r.salaryMin ?? null, salaryMax: t.salaryMax ?? r.salaryMax ?? null,
   arrangement: t.arrangement !== 'Any' ? t.arrangement : r.arrangement || 'Any',
 })
 
@@ -272,7 +279,12 @@ export const useStore = create<State>()(
         return id
       },
       updateLead: (id, patch) => set((s) => ({ leads: s.leads.map((l) => (l.id === id ? { ...l, ...patch } : l)) })),
-      deleteLead: (id) => set((s) => ({ leads: s.leads.filter((l) => l.id !== id) })),
+      deleteLead: (id) =>
+        set((s) => ({
+          leads: s.leads.filter((l) => l.id !== id),
+          // pending sends to a deleted lead would only be counted as failures
+          broadcasts: s.broadcasts.map((b) => (id in b.recipients ? { ...b, recipients: Object.fromEntries(Object.entries(b.recipients).filter(([k]) => k !== id)) } : b)),
+        })),
       upsertTemplate: (t) => set((s) => ({ templates: s.templates.some((x) => x.id === t.id) ? s.templates.map((x) => (x.id === t.id ? t : x)) : [...s.templates, t] })),
       deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((x) => x.id !== id) })),
       logEmail: (e) =>
@@ -326,6 +338,14 @@ export const useStore = create<State>()(
           // invoiceId '' means deleted on purpose: don't auto-draft it again
           scheduleEvents: Object.fromEntries(Object.entries(s.scheduleEvents).map(([k, e]) => [k, e.invoiceId === id ? { ...e, invoiceId: '' } : e])),
         })),
+      setStatuses: (statuses) => set({ statuses }),
+      // Move every project and status update from one status to another (used before deleting a status).
+      remapStatus: (fromId, toId) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.info.health === fromId ? { ...p, info: { ...p.info, health: toId } } : p)),
+          updates: s.updates.map((u) => (u.health === fromId ? { ...u, health: toId } : u)),
+        })),
+      setPmFeatures: (projectId, f) => set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: f } : p)) })),
       setBillingProfile: (patch) => set((s) => ({ billingProfile: { ...s.billingProfile, ...patch } })),
 
       // One recurring occurrence -> one draft invoice, filled from the schedule (and its project).
@@ -560,7 +580,7 @@ export const useStore = create<State>()(
         for (const r of records) {
           let t = findTalent(talents, r)
           if (!t) {
-            t = newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes })
+            t = newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, portfolio: r.portfolio, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes })
             talents.push(t)
             sum.newTalents++
           } else {
@@ -618,7 +638,7 @@ export const useStore = create<State>()(
             talents = talents.map((x) => (x.id === t.id ? { ...fillTalent(x, { ...r, arrangement: r.arrangement || 'Any' }), notes: x.notes || r.notes } : x))
             sum.updated++
           } else {
-            talents.unshift(newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes }))
+            talents.unshift(newTalent({ name: r.name, email: r.email, phone: r.phone, source: r.source, skills: r.skills, portfolio: r.portfolio, salaryMin: r.salaryMin, salaryMax: r.salaryMax, arrangement: r.arrangement || 'Any', notes: r.notes }))
             sum.added++
             sum.newTalents++
           }
@@ -642,7 +662,13 @@ export const useStore = create<State>()(
       },
       updatePosition: (id, patch) =>
         set((s) => ({ positions: s.positions.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
-      deletePosition: (id) => set((s) => ({ positions: s.positions.filter((p) => p.id !== id) })),
+      // Candidates keep their row (just without a position); share links stop pointing at it.
+      deletePosition: (id) =>
+        set((s) => ({
+          positions: s.positions.filter((p) => p.id !== id),
+          candidates: s.candidates.map((c) => (c.positionId === id ? { ...c, positionId: '' } : c)),
+          shares: s.shares.map((x) => (x.positionIds.includes(id) ? { ...x, positionIds: x.positionIds.filter((p) => p !== id) } : x)),
+        })),
       upsertQuestion: (pid, q) =>
         set((s) => ({
           positions: s.positions.map((p) =>
@@ -669,7 +695,14 @@ export const useStore = create<State>()(
           ],
         })),
       addUser: (u) => set((s) => ({ users: [...s.users, u] })),
-      deleteUser: (id) => set((s) => ({ users: s.users.filter((u) => u.id !== id) })),
+      // Never remove the signed-in user or the last active admin; either would lock everybody out.
+      deleteUser: (id) =>
+        set((s) => {
+          const u = s.users.find((x) => x.id === id)
+          const admins = s.users.filter((x) => x.roleId === 'r-admin' && (!x.status || x.status === 'active'))
+          if (!u || id === s.currentUserId || (u.roleId === 'r-admin' && admins.length <= 1)) return {}
+          return { users: s.users.filter((x) => x.id !== id) }
+        }),
       updateUser: (id, patch) => set((s) => ({ users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) })),
 
       addShare: (sh) => {
@@ -683,7 +716,8 @@ export const useStore = create<State>()(
       // Keep whoever is signed in; registered users are re-added so nobody gets locked out.
       reset: () => set((s) => ({ ...seed(), currentUserId: s.currentUserId, users: [...USERS, ...s.users.filter((u) => !USERS.some((d) => d.id === u.id))] })),
     }),
-    { name: 'hiring-pipeline-v8' },
+    // Bump `version` and extend `migrate` when the shape changes; do not rename the key (that orphans people's data).
+    { name: 'hiring-pipeline-v8', storage: appStorage, version: 8, migrate: (persisted) => persisted as State },
   ),
 )
 

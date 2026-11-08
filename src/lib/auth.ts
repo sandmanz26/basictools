@@ -3,9 +3,14 @@
 // data still lives in this browser and can be edited by anyone with devtools.
 // Swap `useAuth` for real API calls when a backend exists.
 
+/**
+ * Demo build: seeded demo accounts, one shared password, reset codes shown on screen. Fine for a prototype,
+ * never for real data. Set VITE_DEMO_MODE=false when the server handles accounts (see docs/SECURITY.md).
+ */
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false'
 export const DEMO_PASSWORD = 'hireflow123'
-/** No mail server yet: show the reset code on screen. Set to false once reset codes are emailed. */
-export const SHOW_RESET_CODE = true
+/** No mail server in the demo: show the reset code on screen. */
+export const SHOW_RESET_CODE = DEMO_MODE
 export const RESET_TTL_MS = 10 * 60 * 1000
 export const MAX_RESET_TRIES = 5
 export const MAX_LOGIN_FAILS = 5

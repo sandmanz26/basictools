@@ -90,7 +90,8 @@ export const fmtDate = (d: string) => {
   return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
-export const today = () => new Date().toISOString().slice(0, 10)
+/** Today as yyyy-mm-dd in the user's own timezone (toISOString would give yesterday early morning in WIB). */
+export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 
 export const DEFAULT_MKT_STAGES = (): Stage[] => [
   { id: 'new', label: 'New lead', color: 'slate', type: 'active', interview: false, nextStep: '' },

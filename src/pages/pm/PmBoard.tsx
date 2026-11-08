@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid'
 import { CalendarDays, Clock, Columns3, Plus, Search, Table2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -169,7 +170,7 @@ export default function PmBoard() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Stage</Label><NativeSelect disabled={!canEdit} className="w-full" value={open.stage} onChange={(v) => upd(open.id, { stage: v })} options={stageOpts} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Priority</Label><NativeSelect disabled={!canEdit} className="w-full" value={open.priority} onChange={(v) => upd(open.id, { priority: v as Priority })} options={prioOpts} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Assignee</Label><Input disabled={!canEdit} list="assignees" value={open.assignee} onChange={(e) => upd(open.id, { assignee: e.target.value })} /><datalist id="assignees">{assignees.map((a) => <option key={a} value={a} />)}</datalist></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Estimate (hours)</Label><Input disabled={!canEdit} type="number" value={open.estimateH ?? ''} onChange={(e) => upd(open.id, { estimateH: e.target.value ? Number(e.target.value) : null })} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Estimate (hours)</Label><NumberInput disabled={!canEdit} value={open.estimateH} onValueChange={(v) => upd(open.id, { estimateH: v })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Start</Label><Input disabled={!canEdit} type="date" value={open.startDate} onChange={(e) => upd(open.id, { startDate: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Due</Label><Input disabled={!canEdit} type="date" value={open.dueDate} onChange={(e) => upd(open.id, { dueDate: e.target.value })} /></div>
                 </div>

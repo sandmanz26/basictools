@@ -86,7 +86,7 @@ export function TestMaterials({ pos, canEdit }: { pos: Position; canEdit: boolea
           <div key={l.id} className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm">
             <Link2 className="size-4 shrink-0 text-muted-foreground" />
             <span className="font-medium">{l.label}</span>
-            <a href={l.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-muted-foreground underline">{l.url}</a>
+            <a href={safeUrl(l.url) ?? undefined} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-muted-foreground underline">{l.url}</a>
             <Button variant="ghost" size="xs" onClick={() => void navigator.clipboard?.writeText(l.url)}>Copy</Button>
             {canEdit && <Button variant="ghost" size="icon-xs" title="Remove" onClick={() => updatePosition(pos.id, { formLinks: links.filter((x) => x.id !== l.id) })}><Trash2 className="text-destructive" /></Button>}
           </div>

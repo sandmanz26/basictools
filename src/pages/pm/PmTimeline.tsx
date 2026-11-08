@@ -30,12 +30,12 @@ export default function PmTimeline() {
 
   // month ticks
   const ticks: { label: string; left: number }[] = []
-  const cur = new Date(min + 'T00:00:00')
-  cur.setDate(1)
-  while (cur.toISOString().slice(0, 10) <= max) {
-    const iso = cur.toISOString().slice(0, 10)
-    if (iso >= min) ticks.push({ label: cur.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), left: pct(iso) })
-    cur.setMonth(cur.getMonth() + 1)
+  let ty = +min.slice(0, 4), tm = +min.slice(5, 7) - 1
+  for (let i = 0; i < 240; i++) { // first of each month, built from the date string so no timezone shifts it
+    const iso = `${ty}-${String(tm + 1).padStart(2, '0')}-01`
+    if (iso > max) break
+    if (iso >= min) ticks.push({ label: new Date(ty, tm, 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), left: pct(iso) })
+    if (++tm > 11) { tm = 0; ty++ }
   }
   const todayLeft = today >= min && today <= max ? pct(today) : null
 

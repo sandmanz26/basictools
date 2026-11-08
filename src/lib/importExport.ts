@@ -1,5 +1,5 @@
 import type { Candidate, Position, Project, RoundResult, Stage, Talent, WorkArrangement } from '@/types'
-import { RESULT_META, getRound } from '@/lib/constants'
+import { RESULT_META, getRound, today } from '@/lib/constants'
 
 export interface ImportRecord {
   name: string
@@ -7,6 +7,7 @@ export interface ImportRecord {
   phone: string
   source: string
   skills: string
+  portfolio: string
   positionTitle: string
   score: number | null
   salaryMin: number | null
@@ -36,6 +37,7 @@ const ALIASES: Record<string, string[]> = {
   position: ['position', 'position apply', 'posisi', 'role', 'job title'],
   source: ['source', 'sumber'],
   skills: ['skills', 'skill', 'headline'],
+  portfolio: ['portfolio', 'portfolio link', 'link portfolio', 'portfolio url', 'behance', 'github'],
   score: ['tech screening', 'technical screening', 'tech screening score', 'score', 'nilai'],
   salaryMin: ['salary min', 'min salary', 'expected salary min', 'salary from'],
   salaryMax: ['salary max', 'max salary', 'expected salary max', 'salary to'],
@@ -143,7 +145,7 @@ export function parseTable(table: string[][], stages: Stage[]): ParseResult {
 
   for (const row of table.slice(1)) {
     const rec: ImportRecord = {
-      name: '', email: '', phone: '', source: '', skills: '', positionTitle: '', score: null, salaryMin: null, salaryMax: null,
+      name: '', email: '', phone: '', source: '', skills: '', portfolio: '', positionTitle: '', score: null, salaryMin: null, salaryMax: null,
       arrangement: '', stage: '', nextStep: '', owner: '', appliedAt: '', archived: false, notes: '', rounds: {},
     }
     let salaryCombined = ''
@@ -158,6 +160,7 @@ export function parseTable(table: string[][], stages: Stage[]): ParseResult {
           case 'position': rec.positionTitle = v; break
           case 'source': rec.source = v; break
           case 'skills': rec.skills = v; break
+          case 'portfolio': rec.portfolio = v; break
           case 'score': rec.score = v && !isNaN(Number(v)) ? Math.max(0, Math.min(100, Number(v))) : null; break
           case 'salaryMin': rec.salaryMin = parseSalary(v).min; break
           case 'salaryMax': rec.salaryMax = parseSalary(v).max; break
@@ -194,7 +197,6 @@ export function parseTable(table: string[][], stages: Stage[]): ParseResult {
   return res
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
 
 export function candidateHeaders(stages: Stage[], opts: { salary: boolean; contact: boolean }) {
   return [
@@ -231,13 +233,13 @@ export function candidateTemplate(stages: Stage[]) {
   return [h, h.map((x) => sample[x] ?? '')]
 }
 
-export const TALENT_HEADERS = ['Name', 'Email', 'Phone', 'Source', 'Skills', 'Salary Min', 'Salary Max', 'Working Arrangement', 'Notes', 'Projects']
+export const TALENT_HEADERS = ['Name', 'Email', 'Phone', 'Source', 'Skills', 'Portfolio', 'Salary Min', 'Salary Max', 'Working Arrangement', 'Notes', 'Projects']
 
 export function talentsToTable(talents: Talent[], candidates: Candidate[], projects: Project[], salary: boolean) {
   const headers = salary ? TALENT_HEADERS : TALENT_HEADERS.filter((h) => !h.startsWith('Salary'))
   const body = talents.map((t) => {
     const projs = candidates.filter((c) => c.talentId === t.id).map((c) => projects.find((p) => p.id === c.projectId)?.name).filter(Boolean)
-    const all = [t.name, t.email, t.phone, t.source, t.skills, t.salaryMin, t.salaryMax, t.arrangement, t.notes, [...new Set(projs)].join('; ')]
+    const all = [t.name, t.email, t.phone, t.source, t.skills, t.portfolio ?? '', t.salaryMin, t.salaryMax, t.arrangement, t.notes, [...new Set(projs)].join('; ')]
     return salary ? all : all.filter((_, i) => !TALENT_HEADERS[i].startsWith('Salary'))
   })
   return [headers, ...body]

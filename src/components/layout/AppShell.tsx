@@ -1,11 +1,13 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  BellRing, Crown, Lock, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, Crown, Lock, TriangleAlert, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
 import { useAutoDrafts, useBillingAlerts } from '@/lib/alerts'
+import { useBroadcastAutoResume } from '@/lib/broadcast'
+import { useStorageFailed } from '@/lib/safeStorage'
 import { useAuth } from '@/auth'
 import { canOpen } from '@/lib/access'
 import { NativeSelect } from '@/components/NativeSelect'
@@ -88,6 +90,8 @@ export function AppShell() {
   const { user, role } = useCurrentUser()
   const billingAlerts = useBillingAlerts()
   useAutoDrafts(can('pm.invoice'))
+  useBroadcastAutoResume()
+  const storageFailed = useStorageFailed()
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
   // Every module stays in the rail; the ones this role can't open are shown locked.
   const locked = (path: string) => !canOpen(can, path)
@@ -184,7 +188,15 @@ export function AppShell() {
           <div className="border-t px-4 py-3 text-xs text-muted-foreground">Mock data · stored in this browser</div>
         </aside>
       )}
-      <main className="min-w-0 flex-1 overflow-hidden"><Outlet /></main>
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {storageFailed && (
+          <div role="alert" className="flex items-center gap-2 border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+            <TriangleAlert className="size-4 shrink-0" />
+            <span><b>Your browser storage is full or blocked.</b> Recent changes are not being saved and will be lost on reload. Export what you need (CSV) now; large lists need the server database.</span>
+          </div>
+        )}
+        <div className="min-h-0 flex-1 overflow-hidden"><Outlet /></div>
+      </main>
     </div>
   )
 }

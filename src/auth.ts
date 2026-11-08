@@ -5,7 +5,7 @@ import { useStore } from '@/store'
 import { USERS } from '@/data/mock'
 import type { User } from '@/types'
 import {
-  DEMO_PASSWORD, LOCK_MS, MAX_LOGIN_FAILS, MAX_RESET_TRIES, RESET_TTL_MS, SESSION_LONG_MS, SESSION_SHORT_MS, SHOW_RESET_CODE,
+  DEMO_MODE, DEMO_PASSWORD, LOCK_MS, MAX_LOGIN_FAILS, MAX_RESET_TRIES, RESET_TTL_MS, SESSION_LONG_MS, SESSION_SHORT_MS, SHOW_RESET_CODE,
   hashSecret, normEmail, passwordOk, randomCode, randomHex, safeEqual, validEmail,
 } from '@/lib/auth'
 
@@ -143,7 +143,7 @@ export const useAuth = create<AuthState>()(
 
 /** Give the demo accounts a known password the first time the app runs. */
 const ready: Promise<void> = (async () => {
-  if (useAuth.getState().seeded) return
+  if (!DEMO_MODE || useAuth.getState().seeded) return
   const creds: Cred[] = []
   for (const u of USERS) {
     const salt = randomHex()

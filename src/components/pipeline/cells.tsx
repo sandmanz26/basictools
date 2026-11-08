@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Dropdown } from '@/components/Dropdown'
+import { NumberInput, formatNumber } from '@/components/NumberInput'
 import { cn } from '@/lib/utils'
 
 const base =
@@ -42,31 +44,41 @@ export function NumberCell({
   value: number | null
   onCommit: (v: number | null) => void
   readOnly?: boolean
-  scale?: number
+  scale?: number // 1_000_000 = the cell shows/edits millions
   placeholder?: string
   format?: (n: number) => string
   align?: 'right' | 'center'
 }) {
-  const display = value == null ? '' : String(value / scale)
-  const [v, setV] = useState(display)
   const [focus, setFocus] = useState(false)
-  useEffect(() => setV(display), [display])
-  const shown = value == null ? '' : format ? format(value) : String(value)
-  if (readOnly) return <div className={cn('px-2 py-1.5 text-[13px] tabular-nums', align === 'center' ? 'text-center' : 'text-right')}>{shown || <span className="text-muted-foreground/50">—</span>}</div>
+  const [draft, setDraft] = useState<number | null>(null)
+  const shown = value == null ? '' : format ? format(value) : formatNumber(value)
+  const alignCls = align === 'center' ? 'text-center' : 'text-right'
+  if (readOnly) return <div className={cn('px-2 py-1.5 text-[13px] tabular-nums', alignCls)}>{shown || <span className="text-muted-foreground/50">—</span>}</div>
+  if (!focus)
+    return (
+      <input
+        readOnly
+        value={shown}
+        placeholder={placeholder}
+        className={cn(base, 'cursor-text tabular-nums', alignCls)}
+        onFocus={() => { setDraft(value == null ? null : value / scale); setFocus(true) }}
+      />
+    )
   return (
-    <input
-      inputMode="numeric"
-      value={focus ? v : shown}
+    <NumberInput
+      bare
+      autoFocus
+      decimals={scale > 1 ? 2 : 0}
+      value={draft}
+      onValueChange={setDraft}
       placeholder={placeholder}
-      className={cn(base, 'tabular-nums', align === 'center' ? 'text-center' : 'text-right')}
-      onFocus={() => setFocus(true)}
-      onChange={(e) => setV(e.target.value.replace(/[^\d.]/g, ''))}
+      className={cn(base, alignCls)}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') { setDraft(value == null ? null : value / scale); (e.target as HTMLInputElement).blur() } }}
       onBlur={() => {
         setFocus(false)
-        const n = v === '' ? null : Number(v) * scale
+        const n = draft == null ? null : Math.round(draft * scale)
         if (n !== value) onCommit(n)
       }}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
     />
   )
 }
@@ -89,22 +101,19 @@ export function SelectCell({
       </div>
     )
   return (
-    <div className="relative px-1 py-1">
-      <select
+    <div className="px-1 py-1">
+      <Dropdown
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={cn(
-          'w-full cursor-pointer appearance-none rounded-md px-1.5 py-0.5 text-xs font-medium outline-none hover:brightness-95 focus:ring-2 focus:ring-ring',
+        onChange={onChange}
+        options={options}
+        placeholder={placeholder}
+        hideChevron={!!tone}
+        triggerClassName={cn(
+          'flex w-full cursor-pointer items-center justify-between gap-1 rounded-md px-1.5 py-0.5 text-left outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-ring',
           tone ?? 'bg-transparent text-[13px] font-normal hover:bg-muted/60',
+          tone && 'text-xs font-medium',
         )}
-      >
-        {!options.some((o) => o.value === value) && <option value="">{placeholder}</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-background text-foreground">
-            {o.label}
-          </option>
-        ))}
-      </select>
+      />
     </div>
   )
 }

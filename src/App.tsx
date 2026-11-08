@@ -1,35 +1,36 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AppShell } from '@/components/layout/AppShell'
-import PortfolioPage from '@/pages/PortfolioPage'
-import ProjectsPage from '@/pages/ProjectsPage'
-import SettingsPage from '@/pages/SettingsPage'
-import SharePage from '@/pages/SharePage'
-import PipelinePage from '@/pages/hr/PipelinePage'
-import TalentPage from '@/pages/hr/TalentPage'
-import PositionsPage from '@/pages/hr/PositionsPage'
-import SharingPage from '@/pages/hr/SharingPage'
-import PipelineSettingsPage from '@/pages/hr/PipelineSettingsPage'
-import PmOverview from '@/pages/pm/PmOverview'
-import PmProjects from '@/pages/pm/PmProjects'
-import PmInvoices from '@/pages/pm/PmInvoices'
-import PmBilling from '@/pages/pm/PmBilling'
-import PmInfo from '@/pages/pm/PmInfo'
-import PmBoard from '@/pages/pm/PmBoard'
-import PmTimeline from '@/pages/pm/PmTimeline'
-import PmRisks from '@/pages/pm/PmRisks'
-import PmTeam from '@/pages/pm/PmTeam'
-import PmBudget from '@/pages/pm/PmBudget'
-import PmUpdates from '@/pages/pm/PmUpdates'
-import PmSettings from '@/pages/pm/PmSettings'
-import MktPipeline from '@/pages/mkt/MktPipeline'
-import MktEmail from '@/pages/mkt/MktEmail'
-import MktBroadcast from '@/pages/mkt/MktBroadcast'
-import MktSettings from '@/pages/mkt/MktSettings'
-import LoginPage from '@/pages/auth/LoginPage'
-import RegisterPage from '@/pages/auth/RegisterPage'
-import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage'
+const PortfolioPage = lazy(() => import('@/pages/PortfolioPage'))
+const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const SharePage = lazy(() => import('@/pages/SharePage'))
+const PipelinePage = lazy(() => import('@/pages/hr/PipelinePage'))
+const TalentPage = lazy(() => import('@/pages/hr/TalentPage'))
+const PositionsPage = lazy(() => import('@/pages/hr/PositionsPage'))
+const SharingPage = lazy(() => import('@/pages/hr/SharingPage'))
+const PipelineSettingsPage = lazy(() => import('@/pages/hr/PipelineSettingsPage'))
+const PmOverview = lazy(() => import('@/pages/pm/PmOverview'))
+const PmProjects = lazy(() => import('@/pages/pm/PmProjects'))
+const PmInvoices = lazy(() => import('@/pages/pm/PmInvoices'))
+const PmBilling = lazy(() => import('@/pages/pm/PmBilling'))
+const PmInfo = lazy(() => import('@/pages/pm/PmInfo'))
+const PmBoard = lazy(() => import('@/pages/pm/PmBoard'))
+const PmTimeline = lazy(() => import('@/pages/pm/PmTimeline'))
+const PmRisks = lazy(() => import('@/pages/pm/PmRisks'))
+const PmTeam = lazy(() => import('@/pages/pm/PmTeam'))
+const PmBudget = lazy(() => import('@/pages/pm/PmBudget'))
+const PmUpdates = lazy(() => import('@/pages/pm/PmUpdates'))
+const PmSettings = lazy(() => import('@/pages/pm/PmSettings'))
+const MktPipeline = lazy(() => import('@/pages/mkt/MktPipeline'))
+const MktEmail = lazy(() => import('@/pages/mkt/MktEmail'))
+const MktBroadcast = lazy(() => import('@/pages/mkt/MktBroadcast'))
+const MktSettings = lazy(() => import('@/pages/mkt/MktSettings'))
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
+const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage'))
 import { useAuth, useSessionUser } from '@/auth'
 import { useStore, useCan } from '@/store'
 import { Locked } from '@/components/Locked'
@@ -70,8 +71,10 @@ function Feature({ id, children }: { id: PmFeature | 'any'; children: React.Reac
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <TooltipProvider>
       <BrowserRouter>
+        <Suspense fallback={<div className="grid h-screen place-items-center text-sm text-muted-foreground">Loading…</div>}>
         <Routes>
           <Route path="/s/:token" element={<SharePage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -112,7 +115,9 @@ export default function App() {
             <Route path="*" element={<Home />} />
           </Route>
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </TooltipProvider>
+    </ErrorBoundary>
   )
 }

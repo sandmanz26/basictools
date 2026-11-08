@@ -3,10 +3,11 @@ import { nanoid } from 'nanoid'
 import { Archive, ArchiveRestore, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Field, HealthBadge, PageHeader, pageCls, usePm } from '@/components/pm/ui'
-import { HEALTH, PHASES, PRIORITY, fieldsOf } from '@/lib/pm'
+import { PHASES, PRIORITY, fieldsOf, statusOptions } from '@/lib/pm'
 import type { ProjectInfo, Stakeholder } from '@/types'
 
 const opts = <T extends string>(o: Record<T, { label: string }>) => (Object.keys(o) as T[]).map((k) => ({ value: k, label: o[k].label }))
@@ -43,14 +44,14 @@ export default function PmInfo() {
 
         {!none('health','phase','methodology','priority','manager','sponsor','client','budget','startDate','endDate') && <Card title="Status & ownership">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {on('health') && <Field label="Health"><div className="flex items-center gap-2"><NativeSelect disabled={ro} className="flex-1" value={info.health} onChange={(v) => up({ health: v as ProjectInfo['health'] })} options={opts(HEALTH)} /><HealthBadge health={info.health} className="hidden xl:inline-flex" /></div></Field>}
+            {on('health') && <Field label="Health"><div className="flex items-center gap-2"><NativeSelect disabled={ro} className="flex-1" value={info.health} onChange={(v) => up({ health: v as ProjectInfo['health'] })} options={statusOptions(s.statuses)} /><HealthBadge health={info.health} className="hidden xl:inline-flex" /></div></Field>}
             {on('phase') && <Field label="Phase"><NativeSelect disabled={ro} className="w-full" value={info.phase} onChange={(v) => up({ phase: v as ProjectInfo['phase'] })} options={PHASES} /></Field>}
             {on('methodology') && <Field label="Methodology"><NativeSelect disabled={ro} className="w-full" value={info.methodology} onChange={(v) => up({ methodology: v as ProjectInfo['methodology'] })} options={['Agile', 'Waterfall', 'Hybrid'].map((x) => ({ value: x, label: x }))} /></Field>}
             {on('priority') && <Field label="Priority"><NativeSelect disabled={ro} className="w-full" value={info.priority} onChange={(v) => up({ priority: v as ProjectInfo['priority'] })} options={opts(PRIORITY)} /></Field>}
             {on('manager') && <Field label="Project manager"><Input disabled={ro} value={info.manager} onChange={(e) => up({ manager: e.target.value })} /></Field>}
             {on('sponsor') && <Field label="Sponsor"><Input disabled={ro} value={info.sponsor} onChange={(e) => up({ sponsor: e.target.value })} /></Field>}
             {on('client') && <Field label="Client / business owner"><Input disabled={ro} value={info.client} onChange={(e) => up({ client: e.target.value })} /></Field>}
-            {on('budget') && <Field label="Total budget (IDR)"><Input disabled={ro} type="number" value={info.budget ?? ''} onChange={(e) => up({ budget: e.target.value ? Number(e.target.value) : null })} /></Field>}
+            {on('budget') && <Field label="Total budget (IDR)"><NumberInput disabled={ro} value={info.budget} onValueChange={(v) => up({ budget: v })} /></Field>}
             {on('startDate') && <Field label="Start date"><Input disabled={ro} type="date" value={info.startDate} onChange={(e) => up({ startDate: e.target.value })} /></Field>}
             {on('endDate') && <Field label="Target end date"><Input disabled={ro} type="date" value={info.endDate} onChange={(e) => up({ endDate: e.target.value })} /></Field>}
           </div>

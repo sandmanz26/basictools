@@ -30,7 +30,9 @@ export function parseDelimited(input: string): string[][] {
 
 export function toCsv(rows: (string | number | null | undefined)[][]): string {
   const esc = (v: string | number | null | undefined) => {
-    const s = v == null ? '' : String(v)
+    let s = v == null ? '' : String(v)
+    // Spreadsheet formula injection: text starting with = + - @ (or tab/CR) would run as a formula in Excel. Real numbers are left alone.
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   // BOM so Excel opens UTF-8 correctly

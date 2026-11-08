@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { BadgeCheck, BellRing, CalendarClock, CheckCircle2, Download, FileDown, Loader2, Plus, Repeat, Send, Trash2, TriangleAlert, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -13,7 +14,7 @@ import { useCan, useCurrentUser, useStore } from '@/store'
 import { InvoiceFromProjectDialog } from '@/components/InvoiceFromProjectDialog'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { downloadInvoicePdf, buildInvoicePdf } from '@/lib/invoicePdf'
-import { eventKey, localToday, nextOccurrence, repeatLabel, daysBetween } from '@/lib/billing'
+import { addDays, eventKey, localToday, nextOccurrence, repeatLabel, daysBetween } from '@/lib/billing'
 import { sendMail } from '@/lib/microsoft'
 import { INVOICE_STATUS, effectiveStatus, invoiceEmail, invoiceSubtotal, invoiceTax, invoiceTotal, money, nextInvoiceNumber, outstanding, todayStr } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
@@ -21,8 +22,7 @@ import { cn } from '@/lib/utils'
 import type { Invoice, InvoiceStatus } from '@/types'
 
 const rp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
-const addBack = (d: string) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() - 7); return x.toISOString().slice(0, 10) } // include a just-missed date
-const addDays = (d: string, n: number) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10) }
+const addBack = (d: string) => addDays(d, -7) // include a just-missed date
 
 function StatusBadge({ inv }: { inv: Invoice }) {
   const st = INVOICE_STATUS[effectiveStatus(inv)]
@@ -205,8 +205,8 @@ export default function PmInvoices() {
                     return (
                       <div key={it.id} className="grid grid-cols-[1fr_4rem_8rem_2rem] items-center gap-2">
                         <Input disabled={!canInvoice} placeholder="Description" value={it.description} onChange={(e) => setIt({ description: e.target.value })} />
-                        <Input disabled={!canInvoice} type="number" min={1} value={it.qty} onChange={(e) => setIt({ qty: Number(e.target.value) || 0 })} />
-                        <Input disabled={!canInvoice} type="number" min={0} placeholder="Unit price" value={it.unitPrice || ''} onChange={(e) => setIt({ unitPrice: Number(e.target.value) || 0 })} />
+                        <NumberInput disabled={!canInvoice} min={1} value={it.qty} onValueChange={(v) => setIt({ qty: v ?? 0 })} />
+                        <NumberInput disabled={!canInvoice} min={0} placeholder="Unit price" value={it.unitPrice || null} onValueChange={(v) => setIt({ unitPrice: v ?? 0 })} />
                         {canInvoice && <Button variant="ghost" size="icon-xs" disabled={open.items.length <= 1} onClick={() => upd(open.id, { items: open.items.filter((x) => x.id !== it.id) })}><Trash2 className="text-destructive" /></Button>}
                       </div>
                     )
@@ -216,7 +216,7 @@ export default function PmInvoices() {
 
                 <div className="ml-auto w-64 space-y-1 text-sm tabular-nums">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span>{rp(invoiceSubtotal(open))}</div>
-                  <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5 text-muted-foreground">Tax <Input disabled={!canInvoice} className="h-6 w-14 px-1.5 text-xs" type="number" min={0} value={open.taxPct} onChange={(e) => upd(open.id, { taxPct: Number(e.target.value) || 0 })} /> %</span>{rp(invoiceTax(open))}</div>
+                  <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5 text-muted-foreground">Tax <NumberInput disabled={!canInvoice} className="h-6 w-14 px-1.5 text-xs" min={0} value={open.taxPct} onValueChange={(v) => upd(open.id, { taxPct: v ?? 0 })} /> %</span>{rp(invoiceTax(open))}</div>
                   <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span>{rp(invoiceTotal(open))}</div>
                 </div>
 

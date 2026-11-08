@@ -7,7 +7,7 @@ import { AuthLayout, FormError, FormNote } from '@/components/auth/AuthLayout'
 import { PasswordInput } from '@/components/auth/PasswordInput'
 import { useAuth, useSessionUser } from '@/auth'
 import { useStore } from '@/store'
-import { DEMO_PASSWORD } from '@/lib/auth'
+import { DEMO_MODE, DEMO_PASSWORD } from '@/lib/auth'
 
 export default function LoginPage() {
   const nav = useNavigate()
@@ -23,14 +23,16 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  if (user) return <Navigate to={state?.from && state.from !== '/login' ? state.from : '/'} replace />
+  // Only follow in-app paths (never //host or https://host) after login.
+  const back = state?.from && state.from.startsWith('/') && !state.from.startsWith('//') && state.from !== '/login' ? state.from : '/'
+  if (user) return <Navigate to={back} replace />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setBusy(true); setError('')
     const r = await login(email, password, remember).catch((err: Error) => ({ ok: false as const, error: err.message }))
     setBusy(false)
-    if (r.ok) nav(state?.from ?? '/', { replace: true })
+    if (r.ok) nav(back, { replace: true })
     else setError(r.error)
   }
 
@@ -54,7 +56,7 @@ export default function LoginPage() {
         <Button type="submit" className="w-full" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Sign in'}</Button>
       </form>
 
-      <details className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+      {DEMO_MODE && <details className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         <summary className="cursor-pointer font-medium">Demo accounts</summary>
         <p className="mt-2">Password for all: <code className="rounded bg-muted px-1">{DEMO_PASSWORD}</code>. Click to fill.</p>
         <div className="mt-2 space-y-1">
@@ -64,7 +66,7 @@ export default function LoginPage() {
             </button>
           ))}
         </div>
-      </details>
+      </details>}
     </AuthLayout>
   )
 }

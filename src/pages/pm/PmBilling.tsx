@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Bell, BellRing, CalendarPlus, CheckCheck, Download, FilePlus2, FileText, Mail, Pencil, Plus, SkipForward, Trash2, Upload, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
@@ -233,15 +234,15 @@ export default function PmBilling() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Project (optional)</Label><NativeSelect className="w-full" value={editing.projectId} onChange={pickProject} options={[{ value: '', label: 'None' }, ...projects.filter((p) => p.status === 'active').map((p) => ({ value: p.id, label: p.name }))]} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">{editing.kind === 'receivable' ? 'Client' : 'Vendor'}</Label><Input value={editing.party} onChange={(e) => setEditing({ ...editing, party: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input value={editing.title} placeholder={editing.kind === 'receivable' ? 'e.g. Monthly service fee' : 'e.g. Subscription'} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Amount (Rp)</Label><Input type="number" value={editing.amount ?? ''} onChange={(e) => setEditing({ ...editing, amount: e.target.value ? Number(e.target.value) : null })} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Amount (Rp)</Label><NumberInput value={editing.amount} onValueChange={(v) => setEditing({ ...editing, amount: v })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PIC</Label><Input value={editing.pic} onChange={(e) => setEditing({ ...editing, pic: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Repeats</Label><NativeSelect className="w-full" value={editing.frequency} onChange={(v) => setEditing({ ...editing, frequency: v as Schedule['frequency'] })} options={[{ value: 'weekly', label: 'Every week' }, { value: 'biweekly', label: 'Every 2 weeks' }, { value: 'monthly', label: 'Every month' }, { value: 'quarterly', label: 'Every 3 months' }, { value: 'yearly', label: 'Every year' }, { value: 'once', label: 'One time' }]} /></div>
                   {(editing.frequency === 'weekly' || editing.frequency === 'biweekly') && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(weekdayOf(editing))} onChange={(v) => setEditing({ ...editing, weekday: Number(v) })} options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))} /></div>}
                   {editing.frequency !== 'once' && editing.frequency !== 'weekly' && editing.frequency !== 'biweekly' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(editing.day)} onChange={(v) => setEditing({ ...editing, day: Number(v) })} options={DAY_OPTS} /></div>}
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">{editing.frequency === 'once' ? 'Date' : 'Starts'}</Label><Input type="date" value={editing.startDate} onChange={(e) => setEditing({ ...editing, startDate: e.target.value })} /></div>
                   {editing.frequency !== 'once' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Ends (blank = open)</Label><Input type="date" value={editing.endDate} onChange={(e) => setEditing({ ...editing, endDate: e.target.value })} /></div>}
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Remind me (days before)</Label><Input type="number" min={0} value={editing.leadDays} onChange={(e) => setEditing({ ...editing, leadDays: Math.max(0, Number(e.target.value) || 0) })} /></div>
-                  {editing.kind === 'receivable' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays within (days)</Label><Input type="number" min={0} value={editing.termDays} onChange={(e) => setEditing({ ...editing, termDays: Math.max(0, Number(e.target.value) || 0) })} /></div>}
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Remind me (days before)</Label><NumberInput min={0} value={editing.leadDays} onValueChange={(v) => setEditing({ ...editing, leadDays: Math.max(0, v ?? 0) })} /></div>
+                  {editing.kind === 'receivable' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays within (days)</Label><NumberInput min={0} value={editing.termDays} onValueChange={(v) => setEditing({ ...editing, termDays: Math.max(0, v ?? 0) })} /></div>}
                 </div>
                 {editing.kind === 'receivable' && (() => {
                   const tpl: ScheduleTemplate = editing.template ?? { items: [], taxPct: 11, clientEmail: '', notes: '' }
@@ -259,8 +260,8 @@ export default function PmBilling() {
                         {tpl.items.map((it) => (
                           <div key={it.id} className="grid grid-cols-[1fr_3.5rem_7rem_2rem] items-center gap-1.5">
                             <Input placeholder="Description" value={it.description} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, description: e.target.value } : x)) })} />
-                            <Input type="number" min={1} value={it.qty} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, qty: Number(e.target.value) || 0 } : x)) })} />
-                            <Input type="number" min={0} placeholder="Unit price" value={it.unitPrice || ''} onChange={(e) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, unitPrice: Number(e.target.value) || 0 } : x)) })} />
+                            <NumberInput min={1} value={it.qty} onValueChange={(v) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, qty: v ?? 0 } : x)) })} />
+                            <NumberInput min={0} placeholder="Unit price" value={it.unitPrice || null} onValueChange={(v) => setTpl({ items: tpl.items.map((x) => (x.id === it.id ? { ...x, unitPrice: v ?? 0 } : x)) })} />
                             <Button variant="ghost" size="icon-xs" onClick={() => setTpl({ items: tpl.items.filter((x) => x.id !== it.id) })}><Trash2 className="text-destructive" /></Button>
                           </div>
                         ))}
@@ -268,7 +269,7 @@ export default function PmBilling() {
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1"><Label className="text-xs text-muted-foreground">Send to (client email)</Label><Input type="email" value={tpl.clientEmail} onChange={(e) => setTpl({ clientEmail: e.target.value })} /></div>
-                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Tax (%)</Label><Input type="number" min={0} value={tpl.taxPct} onChange={(e) => setTpl({ taxPct: Number(e.target.value) || 0 })} /></div>
+                        <div className="space-y-1"><Label className="text-xs text-muted-foreground">Tax (%)</Label><NumberInput min={0} value={tpl.taxPct} onValueChange={(v) => setTpl({ taxPct: v ?? 0 })} /></div>
                       </div>
                       <div className="space-y-1"><Label className="text-xs text-muted-foreground">Invoice notes</Label><Textarea rows={2} placeholder="Payment instructions…" value={tpl.notes} onChange={(e) => setTpl({ notes: e.target.value })} /></div>
                       <label className="flex items-start gap-2.5 text-sm">

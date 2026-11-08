@@ -1,6 +1,7 @@
 import { Archive, CalendarClock, ChevronDown, EyeOff, Search, SlidersHorizontal, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -9,7 +10,7 @@ import { activeCount, emptyFilters, type Filters } from '@/lib/filters'
 import { ARRANGEMENTS, SOURCES } from '@/lib/constants'
 import type { Position, Stage } from '@/types'
 
-function Multi({
+export function Multi({
   label, options, value, onChange,
 }: {
   label: string
@@ -111,9 +112,9 @@ export function FilterBar({
             <div className="space-y-1.5">
               <div className="text-xs font-medium text-muted-foreground">Expected salary (million IDR)</div>
               <div className="flex items-center gap-2">
-                <Input type="number" placeholder="Min" value={filters.salaryMin} onChange={(e) => set('salaryMin', e.target.value)} className="h-8" />
+                <NumberInput placeholder="Min" value={filters.salaryMin ? Number(filters.salaryMin) : null} onValueChange={(v) => set('salaryMin', v == null ? '' : String(v))} className="h-8" />
                 <span className="text-muted-foreground">–</span>
-                <Input type="number" placeholder="Max" value={filters.salaryMax} onChange={(e) => set('salaryMax', e.target.value)} className="h-8" />
+                <NumberInput placeholder="Max" value={filters.salaryMax ? Number(filters.salaryMax) : null} onValueChange={(v) => set('salaryMax', v == null ? '' : String(v))} className="h-8" />
               </div>
             </div>
           )}

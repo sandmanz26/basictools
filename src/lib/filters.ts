@@ -1,5 +1,6 @@
 import type { Candidate, Stage, StageId } from '@/types'
 import { today } from '@/lib/constants'
+import { addDays } from '@/lib/billing'
 
 export interface Filters {
   q: string
@@ -25,12 +26,6 @@ export function activeCount(f: Filters) {
     (f.q ? 1 : 0) + f.positions.length + f.stages.length + f.arrangements.length + f.sources.length +
     f.owners.length + (f.salaryMin ? 1 : 0) + (f.salaryMax ? 1 : 0) + (f.upcoming ? 1 : 0) + (f.hideClosed ? 1 : 0) + (f.archived ? 1 : 0)
   )
-}
-
-const addDays = (d: string, n: number) => {
-  const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() + n)
-  return dt.toISOString().slice(0, 10)
 }
 
 export function applyFilters(list: Candidate[], f: Filters, stages: Stage[]) {

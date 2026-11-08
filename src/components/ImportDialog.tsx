@@ -62,7 +62,7 @@ export function ImportDialog({
   const template = () =>
     kind === 'project'
       ? downloadCsv('candidates-template.csv', candidateTemplate(stages))
-      : downloadCsv('talent-pool-template.csv', [TALENT_HEADERS.slice(0, -1), ['Budi Santoso', 'budi@mail.com', '+62 812-0000-0000', 'LinkedIn', 'React, TypeScript', '15000000', '18000000', 'Hybrid', '']])
+      : downloadCsv('talent-pool-template.csv', [TALENT_HEADERS.slice(0, -1), ['Budi Santoso', 'budi@mail.com', '+62 812-0000-0000', 'LinkedIn', 'React, TypeScript', 'https://github.com/budi', '15000000', '18000000', 'Hybrid', '']])
 
   return (
     <Dialog open={open} onOpenChange={close}>

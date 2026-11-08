@@ -1,11 +1,19 @@
-import type { Health, Invoice, InvoiceStatus, Phase, PmFeature, PmField, Priority, Project, ProjectInfo, Stage } from '@/types'
+import { STAGE_COLORS, today } from '@/lib/constants'
+import type { Invoice, StatusDef, InvoiceStatus, Phase, PmFeature, PmField, Priority, Project, ProjectInfo, Stage } from '@/types'
 
-export const HEALTH: Record<Health, { label: string; tone: string; dot: string }> = {
-  on_track: { label: 'On track', tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300', dot: 'bg-emerald-500' },
-  at_risk: { label: 'At risk', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300', dot: 'bg-amber-500' },
-  off_track: { label: 'Off track', tone: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300', dot: 'bg-red-500' },
-  on_hold: { label: 'On hold', tone: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200', dot: 'bg-slate-400' },
-  done: { label: 'Completed', tone: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300', dot: 'bg-sky-500' },
+export const DEFAULT_STATUSES = (): StatusDef[] => [
+  { id: 'on_track', label: 'On track', color: 'emerald', attention: false },
+  { id: 'at_risk', label: 'At risk', color: 'amber', attention: true },
+  { id: 'off_track', label: 'Off track', color: 'red', attention: true },
+  { id: 'on_hold', label: 'On hold', color: 'slate', attention: false },
+  { id: 'done', label: 'Completed', color: 'sky', attention: false },
+]
+
+/** Badge look for a status id. Unknown ids (e.g. a status deleted elsewhere) still render, in grey. */
+export function statusStyle(list: StatusDef[], id: string): { label: string; tone: string; dot: string } {
+  const st = list.find((x) => x.id === id)
+  const c = STAGE_COLORS[st?.color ?? 'slate'] ?? STAGE_COLORS.slate
+  return { label: st?.label ?? (id ? id.replace(/_/g, ' ') : '—'), tone: c.tone.replace('bg-green-600 text-white', 'bg-green-100 text-green-800'), dot: c.dot }
 }
 
 export const PHASES: { value: Phase; label: string }[] = [
@@ -53,7 +61,7 @@ export const money = (n: number | null | undefined) => {
 }
 
 export const daysBetween = (a: string, b: string) => Math.round((new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000)
-export const todayStr = () => new Date().toISOString().slice(0, 10)
+export const todayStr = () => today()
 
 export const PM_FEATURES: { id: PmFeature; label: string; hint: string; to: string }[] = [
   { id: 'board', label: 'Work board', hint: 'Kanban tasks with its own workflow stages', to: '/pm/board' },
@@ -135,3 +143,5 @@ export function nextInvoiceNumber(invoices: Invoice[], issueDate = todayStr()) {
   const max = invoices.reduce((m, i) => Math.max(m, Number(i.number.match(/(\d+)$/)?.[1] ?? 0)), 0)
   return `INV-${issueDate.slice(0, 4)}-${String(max + 1).padStart(3, '0')}`
 }
+
+export const statusOptions = (list: StatusDef[]) => list.map((x) => ({ value: x.id, label: x.label }))

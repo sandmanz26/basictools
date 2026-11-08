@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/NumberInput'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useStore } from '@/store'
 import { money, nextInvoiceNumber, todayStr } from '@/lib/pm'
@@ -94,7 +94,7 @@ export function InvoiceFromProjectDialog({
                   <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{g}</h3>
                   {g.startsWith('Finished') && (
                     <label className="flex items-center gap-2 text-xs text-muted-foreground">Rate per hour (Rp)
-                      <Input type="number" min={0} className="h-7 w-32" value={rate || ''} onChange={(e) => setRate(Number(e.target.value) || 0)} />
+                      <NumberInput min={0} className="h-7 w-32" value={rate || null} onValueChange={(v) => setRate(v ?? 0)} />
                     </label>
                   )}
                 </div>
@@ -110,8 +110,8 @@ export function InvoiceFromProjectDialog({
                         </div>
                         {on ? (
                           <div className="flex items-center gap-1.5">
-                            {l.group.startsWith('Finished') && <Input type="number" min={0} className="h-7 w-16" value={picked[l.ref].qty} onChange={(e) => edit(l.ref, { qty: Number(e.target.value) || 0 })} />}
-                            <Input type="number" min={0} className="h-7 w-36" placeholder="Unit price" value={price(l) || ''} onChange={(e) => edit(l.ref, { unitPrice: Number(e.target.value) || 0 })} />
+                            {l.group.startsWith('Finished') && <NumberInput min={0} className="h-7 w-16" value={picked[l.ref].qty} onValueChange={(v) => edit(l.ref, { qty: v ?? 0 })} />}
+                            <NumberInput min={0} className="h-7 w-36" placeholder="Unit price" value={price(l) || null} onValueChange={(v) => edit(l.ref, { unitPrice: v ?? 0 })} />
                           </div>
                         ) : <span className="text-xs text-muted-foreground tabular-nums">{l.unitPrice ? money(l.qty * l.unitPrice) : ''}</span>}
                       </div>

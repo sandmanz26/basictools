@@ -42,6 +42,7 @@ export interface Talent {
   phone: string
   source: string
   skills: string // free text / comma separated
+  portfolio?: string // link to portfolio / GitHub / Behance
   salaryMin: number | null
   salaryMax: number | null
   arrangement: WorkArrangement
@@ -177,7 +178,16 @@ export interface ShareLink {
 
 // ---------- Project management (PM) ----------
 
-export type Health = 'on_track' | 'at_risk' | 'off_track' | 'on_hold' | 'done'
+/** Id of a project status (see StatusDef). Default ids: on_track, at_risk, off_track, on_hold, done. */
+export type Health = string
+
+/** A project status the team can define: shown as a coloured badge on projects and updates. */
+export interface StatusDef {
+  id: string
+  label: string
+  color: string // key of STAGE_COLORS
+  attention: boolean // counts as "needs attention" on the project list
+}
 export type Phase = 'initiation' | 'planning' | 'execution' | 'monitoring' | 'closing'
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 
@@ -334,6 +344,7 @@ export interface SentEmail {
   sentBy: string
   status: 'sent' | 'failed'
   error: string
+  broadcastId?: string // set when sent as part of a broadcast (for daily caps)
 }
 
 export interface MsConfig {
@@ -401,6 +412,11 @@ export interface Broadcast {
   createdAt: string // ISO
   finishedAt: string
   createdBy: string
+  dailyCap?: number // max emails per calendar day for this broadcast (0/undefined = no cap)
+  windowStart?: number // only send from this hour (0-23)
+  windowEnd?: number // ...until this hour (1-24)
+  pausedReason?: string // why it stopped by itself
+  resumeAt?: string // ISO: when it continues automatically (while the app is open)
 }
 
 // ---------- Billing schedules & reminders ----------

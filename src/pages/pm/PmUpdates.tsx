@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Empty, Field, HealthBadge, PageHeader, pageCls, usePm } from '@/components/pm/ui'
 import { useCurrentUser } from '@/store'
-import { HEALTH, todayStr } from '@/lib/pm'
+import { statusOptions, todayStr } from '@/lib/pm'
 import { fmtDate } from '@/lib/constants'
 import type { Health } from '@/types'
 
@@ -34,7 +34,7 @@ export default function PmUpdates() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} className="w-40" /></Field>
-                <Field label="Overall health"><NativeSelect value={f.health} onChange={(v) => setF({ ...f, health: v as Health })} options={(Object.keys(HEALTH) as Health[]).map((k) => ({ value: k, label: HEALTH[k].label }))} /></Field>
+                <Field label="Overall health"><NativeSelect value={f.health} onChange={(v) => setF({ ...f, health: v as Health })} options={statusOptions(s.statuses)} /></Field>
                 <label className="flex items-center gap-2 pb-1.5 text-sm"><input type="checkbox" checked={f.setHealth} onChange={(e) => setF({ ...f, setHealth: e.target.checked })} /> Also set project health</label>
               </div>
               <Field label="Summary"><Textarea rows={2} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} placeholder="One or two sentences anyone can read." /></Field>

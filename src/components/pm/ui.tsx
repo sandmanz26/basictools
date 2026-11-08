@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { useCan, useStore } from '@/store'
-import { HEALTH, PRIORITY } from '@/lib/pm'
+import { PRIORITY, statusStyle } from '@/lib/pm'
 import type { Health, Priority } from '@/types'
 
 /** Everything the PM pages need for the active project. */
@@ -43,7 +43,8 @@ export function Card({ title, action, children, className }: { title?: ReactNode
 }
 
 export function HealthBadge({ health, className }: { health: Health; className?: string }) {
-  const h = HEALTH[health]
+  const statuses = useStore((s) => s.statuses)
+  const h = statusStyle(statuses, health)
   return (
     <span className={cn('inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium', h.tone, className)}>
       <span className={cn('size-1.5 rounded-full', h.dot)} /> {h.label}
