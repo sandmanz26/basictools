@@ -1,0 +1,50 @@
+# Local stack: Postgres 16 + the API.
+#   cp .env.example .env   (set JWT_ACCESS_SECRET, UNSUBSCRIBE_SECRET, BOOTSTRAP_ADMIN_PASSWORD)
+#   docker compose up --build
+#   (migrations and the idempotent seed run on boot: roles + the bootstrap admin from BOOTSTRAP_ADMIN_*)
+# For production use NODE_ENV=production, https, a real MAIL_PROVIDER and a managed Postgres instead.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hireflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hireflow}
+      POSTGRES_DB: hireflow
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hireflow -d hireflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://hireflow:${POSTGRES_PASSWORD:-hireflow}@db:5432/hireflow
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in .env (openssl rand -base64 48)}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET:?set UNSUBSCRIBE_SECRET in .env (openssl rand -base64 48)}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:
