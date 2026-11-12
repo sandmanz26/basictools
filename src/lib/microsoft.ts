@@ -75,7 +75,41 @@ export async function sendMail(cfg: MsConfig, to: string, subject: string, body:
   if (res.status === 202) return
   let msg = `Graph error ${res.status}`
   try { msg = (await res.json()).error?.message ?? msg } catch { /* ignore */ }
-  throw new Error(msg)
+  throw new Error(friendlyMsError(`${res.status} ${msg}`))
+}
+
+/** Confirms the token works and the mailbox can be reached. */
+export async function testConnection(cfg: MsConfig): Promise<{ name: string; mail: string }> {
+  const accessToken = await token(cfg)
+  const res = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName', { headers: { Authorization: `Bearer ${accessToken}` } })
+  if (!res.ok) throw new Error(friendlyMsError(`${res.status} ${await res.text().catch(() => '')}`))
+  const me = await res.json()
+  return { name: me.displayName ?? '', mail: me.mail ?? me.userPrincipalName ?? '' }
+}
+
+/** Turn raw Microsoft error text into what went wrong and the exact place to fix it. */
+export function friendlyMsError(raw: string): string {
+  const m = raw || ''
+  if (m.includes('\n\nDetails:')) return m // already translated
+  const rules: [RegExp, string][] = [
+    [/AADSTS50011|redirect_uri_mismatch|redirect uri/i, `Redirect URI mismatch. In Entra: App registrations → your app → Authentication → Single-page application → Add URI → ${window.location.origin} → Save.`],
+    [/AADSTS9002326|cross-origin token redemption/i, 'The redirect URI is registered as "Web". In Entra: App registrations → your app → Authentication → remove it from "Web" and add it under "Single-page application".'],
+    [/AADSTS700016|application with identifier .* was not found/i, 'Microsoft does not know this client ID in that directory. Re-copy "Application (client) ID" from the app Overview page, and check "Who can sign in" matches how the app was registered.'],
+    [/AADSTS90002|tenant .* not found|AADSTS900023/i, 'Tenant not found. Use "Directory (tenant) ID" from the app Overview page, or pick "Work or school accounts only".'],
+    [/AADSTS50020|does not exist in tenant|AADSTS50034/i, 'This account is not in the directory the app allows. Use a company account, or change "Supported account types" under Authentication → Supported accounts.'],
+    [/AADSTS65001|consent_required|admin_consent|AADSTS90094|AADSTS650056/i, 'Permission not approved yet. In Entra: App registrations → your app → API permissions → "Grant admin consent for …" (needs an admin). Mail.Send must show a green tick.'],
+    [/AADSTS53003|AADSTS530003|conditional access/i, 'A conditional-access policy blocks this sign-in. Ask your IT admin to allow it for this app or this device.'],
+    [/AADSTS50105|AADSTS50177|assignment required/i, 'You are not assigned to this app. Ask an admin to add you under Enterprise applications → your app → Users and groups.'],
+    [/popup_window_error|empty_window_error|popup/i, 'The Microsoft sign-in popup was blocked. Allow popups for this site in the browser address bar, then click Connect again.'],
+    [/user_cancelled|user cancelled/i, 'Sign-in was cancelled.'],
+    [/MailboxNotEnabledForRESTAPI|mailbox.*(not|inactive|soft)|ErrorInvalidUser|REST API is not yet supported/i, 'This account has no Exchange Online mailbox (no Microsoft 365 license with email), so it cannot send. Ask your admin to assign a license that includes Exchange Online.'],
+    [/^401|InvalidAuthenticationToken|token.*expired/i, 'Microsoft rejected the sign-in token. Click Disconnect, then Connect Microsoft again.'],
+    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check Mail.Send is added under API permissions and approved, then Disconnect and Connect again.'],
+    [/^429|throttl|TooManyRequests|ApplicationThrottled/i, 'Microsoft is rate-limiting this mailbox (about 30 messages per minute). Wait a minute and retry with a slower pace.'],
+    [/Failed to fetch|NetworkError|network/i, 'Could not reach Microsoft. Check your internet connection or whether a firewall or VPN blocks graph.microsoft.com.'],
+  ]
+  for (const [re, text] of rules) if (re.test(m)) return `${text}\n\nDetails: ${m.slice(0, 220)}`
+  return m
 }
 
 /** Fill {{name}}, {{firstName}}, {{company}}, {{title}}, {{owner}} from a lead. Unknown variables are left visible. */

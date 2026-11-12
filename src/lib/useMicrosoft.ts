@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AccountInfo } from '@azure/msal-browser'
-import { currentAccount, signIn, signOut } from '@/lib/microsoft'
+import { currentAccount, friendlyMsError, signIn, signOut } from '@/lib/microsoft'
 import { useStore } from '@/store'
 
 /** Microsoft sign-in state for the configured Azure app. */
@@ -19,7 +19,7 @@ export function useMicrosoft() {
 
   const run = useCallback(async (fn: () => Promise<AccountInfo | null>) => {
     setBusy(true); setError('')
-    try { setAccount(await fn()) } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setBusy(false) }
+    try { setAccount(await fn()) } catch (e) { setError(friendlyMsError(e instanceof Error ? `${e.name} ${e.message}` : String(e))) } finally { setBusy(false) }
   }, [])
 
   return {
