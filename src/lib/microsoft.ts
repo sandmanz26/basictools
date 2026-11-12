@@ -101,6 +101,7 @@ export function friendlyMsError(raw: string): string {
     [/AADSTS53003|AADSTS530003|conditional access/i, 'A conditional-access policy blocks this sign-in. Ask your IT admin to allow it for this app or this device.'],
     [/AADSTS50105|AADSTS50177|assignment required/i, 'You are not assigned to this app. Ask an admin to add you under Enterprise applications → your app → Users and groups.'],
     [/popup_window_error|empty_window_error|popup/i, 'The Microsoft sign-in popup was blocked. Allow popups for this site in the browser address bar, then click Connect again.'],
+    [/timed_out|monitor_window_timeout/i, 'The sign-in window did not report back in time. Close any open Microsoft popup, refresh this page (Cmd+Shift+R) and click Connect again. If it repeats, check that the exact address in your browser bar is listed under Authentication → Single-page application.'],
     [/user_cancelled|user cancelled/i, 'Sign-in was cancelled.'],
     [/MailboxNotEnabledForRESTAPI|mailbox.*(not|inactive|soft)|ErrorInvalidUser|REST API is not yet supported/i, 'This account has no Exchange Online mailbox (no Microsoft 365 license with email), so it cannot send. Ask your admin to assign a license that includes Exchange Online.'],
     [/^401|InvalidAuthenticationToken|token.*expired/i, 'Microsoft rejected the sign-in token. Click Disconnect, then Connect Microsoft again.'],
