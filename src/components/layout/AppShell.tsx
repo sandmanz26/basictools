@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  BellRing, Crown, Lock, TriangleAlert, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, Crown, FlaskConical, Lock, TriangleAlert, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
@@ -76,7 +76,7 @@ export const MODULES: Module[] = [
         { to: '/mkt/email', label: 'Email outreach', icon: Mail },
         { to: '/mkt/broadcast', label: 'Broadcast', icon: Send },
       ] },
-      { label: 'Management', items: [{ to: '/mkt/settings', label: 'Microsoft & stages', icon: SlidersHorizontal }] },
+      { label: 'Management', items: [{ to: '/mkt/settings', label: 'Microsoft & stages', icon: SlidersHorizontal }, { to: '/mkt/test', label: 'Microsoft test lab', icon: FlaskConical }] },
     ],
   },
 ]

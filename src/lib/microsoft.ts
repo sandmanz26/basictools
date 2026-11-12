@@ -3,6 +3,8 @@ import type { Lead, MsConfig } from '@/types'
 
 /** Delegated scopes: sign-in profile + send mail as the signed-in user. */
 export const MS_SCOPES = ['User.Read', 'Mail.Send']
+/** Only the inbox test asks for this (read-only). Needs its own permission in Azure. */
+export const MS_READ_SCOPES = ['Mail.Read']
 
 let cached: { key: string; app: PublicClientApplication } | null = null
 
@@ -41,14 +43,14 @@ export async function signOut(cfg: MsConfig) {
   if (account) await app.logoutPopup({ account, postLogoutRedirectUri: window.location.origin })
 }
 
-async function token(cfg: MsConfig): Promise<string> {
+async function token(cfg: MsConfig, scopes: string[] = MS_SCOPES): Promise<string> {
   const app = await getApp(cfg)
   const account = app.getActiveAccount() ?? app.getAllAccounts()[0]
   if (!account) throw new Error('Not signed in to Microsoft.')
   try {
-    return (await app.acquireTokenSilent({ scopes: MS_SCOPES, account })).accessToken
+    return (await app.acquireTokenSilent({ scopes, account })).accessToken
   } catch (e) {
-    if (e instanceof InteractionRequiredAuthError) return (await app.acquireTokenPopup({ scopes: MS_SCOPES, account })).accessToken
+    if (e instanceof InteractionRequiredAuthError) return (await app.acquireTokenPopup({ scopes, account })).accessToken
     throw e
   }
 }
@@ -105,7 +107,7 @@ export function friendlyMsError(raw: string): string {
     [/user_cancelled|user cancelled/i, 'Sign-in was cancelled.'],
     [/MailboxNotEnabledForRESTAPI|mailbox.*(not|inactive|soft)|ErrorInvalidUser|REST API is not yet supported/i, 'This account has no Exchange Online mailbox (no Microsoft 365 license with email), so it cannot send. Ask your admin to assign a license that includes Exchange Online.'],
     [/^401|InvalidAuthenticationToken|token.*expired/i, 'Microsoft rejected the sign-in token. Click Disconnect, then Connect Microsoft again.'],
-    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check Mail.Send is added under API permissions and approved, then Disconnect and Connect again.'],
+    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check the permission (Mail.Send to send, Mail.Read to read the inbox) is added under API permissions as Delegated and approved, then Disconnect and Connect again.'],
     [/^429|throttl|TooManyRequests|ApplicationThrottled/i, 'Microsoft is rate-limiting this mailbox (about 30 messages per minute). Wait a minute and retry with a slower pace.'],
     [/Failed to fetch|NetworkError|network/i, 'Could not reach Microsoft. Check your internet connection or whether a firewall or VPN blocks graph.microsoft.com.'],
   ]
@@ -122,3 +124,74 @@ export function merge(text: string, l: Lead): string {
 }
 
 export const MERGE_FIELDS = ['name', 'firstName', 'company', 'title', 'owner']
+
+
+// ---------- Test tools: parallel sending and reading the inbox ----------
+
+export interface BurstRow { n: number; status: 'queued' | 'sending' | 'sent' | 'failed'; ms?: number; tries: number; error?: string }
+
+/** Send one message and report how many attempts it took. Retries on 429/503 using Retry-After (max 3 tries). */
+async function sendWithRetry(cfg: MsConfig, to: string, subject: string, body: string): Promise<{ tries: number }> {
+  const accessToken = await token(cfg)
+  for (let tries = 1; ; tries++) {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: toHtml(body) }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true }),
+    })
+    if (res.status === 202) return { tries }
+    if ((res.status === 429 || res.status === 503) && tries < 3) {
+      const wait = Math.min(Number(res.headers.get('Retry-After')) || 5, 30)
+      await new Promise((r) => setTimeout(r, wait * 1000))
+      continue
+    }
+    let msg = `Graph error ${res.status}`
+    try { msg = (await res.json()).error?.message ?? msg } catch { /* ignore */ }
+    throw Object.assign(new Error(friendlyMsError(`${res.status} ${msg}`)), { tries })
+  }
+}
+
+/** Fire `count` emails with at most `concurrency` in flight at once. Reports each row as it changes. */
+export async function burstSend(
+  cfg: MsConfig, to: string, count: number, concurrency: number, onRow: (row: BurstRow) => void, runId = Date.now().toString(36),
+): Promise<void> {
+  const accessToken = token(cfg) // fail fast (and prompt for sign-in once) before starting
+  await accessToken
+  let next = 1
+  const worker = async () => {
+    while (next <= count) {
+      const n = next++
+      const t0 = performance.now()
+      onRow({ n, status: 'sending', tries: 1 })
+      try {
+        const { tries } = await sendWithRetry(cfg, to, `HireFlow burst test ${runId} (${n}/${count})`, `Test message ${n} of ${count} from HireFlow. Safe to delete.`)
+        onRow({ n, status: 'sent', ms: Math.round(performance.now() - t0), tries })
+      } catch (e) {
+        onRow({ n, status: 'failed', ms: Math.round(performance.now() - t0), tries: (e as { tries?: number }).tries ?? 1, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, count)) }, worker))
+}
+
+export interface InboxMessage { id: string; subject: string; from: string; fromName: string; received: string; read: boolean; preview: string }
+
+/** Read-only look at the newest inbox messages. Nothing is stored; it lives in the page only. */
+export async function listInbox(cfg: MsConfig, top = 15, search = ''): Promise<InboxMessage[]> {
+  const accessToken = await token(cfg, MS_READ_SCOPES)
+  const q = new URLSearchParams({ $top: String(Math.min(Math.max(top, 1), 50)), $select: 'id,subject,from,receivedDateTime,isRead,bodyPreview' })
+  const term = search.trim().replace(/"/g, '')
+  // Graph does not allow $orderby together with $search; search results come back relevance-ordered.
+  if (term) q.set('$search', `"${term}"`); else q.set('$orderby', 'receivedDateTime desc')
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?${q}`, { headers: { Authorization: `Bearer ${accessToken}` } })
+  if (!res.ok) {
+    let msg = ''
+    try { msg = (await res.json()).error?.message ?? '' } catch { /* ignore */ }
+    throw new Error(friendlyMsError(`${res.status} ${msg}`))
+  }
+  const data = (await res.json()) as { value: { id: string; subject?: string; from?: { emailAddress?: { address?: string; name?: string } }; receivedDateTime: string; isRead: boolean; bodyPreview?: string }[] }
+  return data.value.map((m) => ({
+    id: m.id, subject: m.subject || '(no subject)', from: m.from?.emailAddress?.address ?? '', fromName: m.from?.emailAddress?.name ?? '',
+    received: m.receivedDateTime, read: m.isRead, preview: m.bodyPreview ?? '',
+  }))
+}
