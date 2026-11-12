@@ -128,7 +128,7 @@ export const MERGE_FIELDS = ['name', 'firstName', 'company', 'title', 'owner']
 
 // ---------- Test tools: parallel sending and reading the inbox ----------
 
-export interface BurstRow { n: number; status: 'queued' | 'sending' | 'sent' | 'failed'; ms?: number; tries: number; error?: string }
+export interface BurstRow { n: number; to?: string; status: 'queued' | 'sending' | 'sent' | 'failed'; ms?: number; tries: number; error?: string }
 
 /** Send one message and report how many attempts it took. Retries on 429/503 using Retry-After (max 3 tries). */
 async function sendWithRetry(cfg: MsConfig, to: string, subject: string, body: string): Promise<{ tries: number }> {
@@ -151,23 +151,25 @@ async function sendWithRetry(cfg: MsConfig, to: string, subject: string, body: s
   }
 }
 
-/** Fire `count` emails with at most `concurrency` in flight at once. Reports each row as it changes. */
-export async function burstSend(
-  cfg: MsConfig, to: string, count: number, concurrency: number, onRow: (row: BurstRow) => void, runId = Date.now().toString(36),
-): Promise<void> {
-  const accessToken = token(cfg) // fail fast (and prompt for sign-in once) before starting
-  await accessToken
-  let next = 1
+export interface BurstItem { to: string; subject: string; body: string }
+
+/** Send the items with at most `concurrency` in flight at once. Reports each row as it changes. */
+export async function burstSend(cfg: MsConfig, items: BurstItem[], concurrency: number, onRow: (row: BurstRow) => void): Promise<void> {
+  await token(cfg) // fail fast (and prompt for sign-in once) before starting
+  const count = items.length
+  let next = 0
   const worker = async () => {
-    while (next <= count) {
-      const n = next++
+    while (next < count) {
+      const i = next++
+      const n = i + 1
+      const { to, subject, body } = items[i]
       const t0 = performance.now()
-      onRow({ n, status: 'sending', tries: 1 })
+      onRow({ n, to, status: 'sending', tries: 1 })
       try {
-        const { tries } = await sendWithRetry(cfg, to, `HireFlow burst test ${runId} (${n}/${count})`, `Test message ${n} of ${count} from HireFlow. Safe to delete.`)
-        onRow({ n, status: 'sent', ms: Math.round(performance.now() - t0), tries })
+        const { tries } = await sendWithRetry(cfg, to, subject, body)
+        onRow({ n, to, status: 'sent', ms: Math.round(performance.now() - t0), tries })
       } catch (e) {
-        onRow({ n, status: 'failed', ms: Math.round(performance.now() - t0), tries: (e as { tries?: number }).tries ?? 1, error: e instanceof Error ? e.message : String(e) })
+        onRow({ n, to, status: 'failed', ms: Math.round(performance.now() - t0), tries: (e as { tries?: number }).tries ?? 1, error: e instanceof Error ? e.message : String(e) })
       }
     }
   }
