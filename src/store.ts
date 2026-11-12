@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import { appStorage } from '@/lib/safeStorage'
 import { nanoid } from 'nanoid'
 import type {
-  Broadcast,
+  Broadcast, MeetingFollowup,
   Candidate,
   BillingProfile,
   Invoice,
@@ -66,6 +66,7 @@ interface State {
   schedules: Schedule[]
   scheduleEvents: Record<string, ScheduleEvent>
   broadcasts: Broadcast[]
+  meetingFollowups: Record<string, MeetingFollowup>
   msConfig: MsConfig
   currentUserId: string
   activeProjectId: string
@@ -154,6 +155,7 @@ interface State {
   updateShare: (id: string, patch: Partial<ShareLink>) => void
   deleteShare: (id: string) => void
   bumpShare: (id: string) => void
+  setMeetingFollowup: (meetingId: string, f: MeetingFollowup | null) => void
   reset: () => void
 }
 
@@ -192,6 +194,7 @@ const seed = () => ({
   billingProfile: { company: '', address: '', email: '', phone: '', taxId: '', bankName: '', bankAccount: '', bankHolder: '', paymentNote: '' } as BillingProfile,
   scheduleEvents: {} as Record<string, ScheduleEvent>,
   broadcasts: [] as Broadcast[],
+  meetingFollowups: {} as Record<string, MeetingFollowup>,
   msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
   currentUserId: 'u1',
   activeProjectId: 'p1',
@@ -399,6 +402,11 @@ export const useStore = create<State>()(
       setBroadcastRecipient: (id, leadId, status) =>
         set((s) => ({ broadcasts: s.broadcasts.map((x) => (x.id === id ? { ...x, recipients: { ...x.recipients, [leadId]: status } } : x)) })),
       deleteBroadcast: (id) => set((s) => ({ broadcasts: s.broadcasts.filter((x) => x.id !== id) })),
+      setMeetingFollowup: (id, f) => set((s) => {
+        const next = { ...s.meetingFollowups }
+        if (f) next[id] = f; else delete next[id]
+        return { meetingFollowups: next }
+      }),
       setMsConfig: (patch) => set((s) => ({ msConfig: { ...s.msConfig, ...patch } })),
 
       setUser: (id) => set({ currentUserId: id }),

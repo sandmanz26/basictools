@@ -334,6 +334,9 @@ export interface EmailTemplate {
   body: string // plain text, supports {{name}} {{firstName}} {{company}} {{title}} {{owner}}
 }
 
+/** What happened to a meeting after it ended. Only the meeting id is kept, never its contents. */
+export interface MeetingFollowup { status: 'done' | 'skipped'; at: string; sent?: number }
+
 export interface SentEmail {
   id: string
   leadId: string

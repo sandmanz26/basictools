@@ -29,6 +29,7 @@ const MktEmail = lazy(() => import('@/pages/mkt/MktEmail'))
 const MktBroadcast = lazy(() => import('@/pages/mkt/MktBroadcast'))
 const MktSettings = lazy(() => import('@/pages/mkt/MktSettings'))
 const MktTest = lazy(() => import('@/pages/mkt/MktTest'))
+const MktMeetings = lazy(() => import('@/pages/mkt/MktMeetings'))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
 const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
 const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage'))
@@ -111,6 +112,7 @@ export default function App() {
             <Route path="mkt/broadcast" element={<MktBroadcast />} />
             <Route path="mkt/settings" element={<MktSettings />} />
             <Route path="mkt/test" element={<MktTest />} />
+            <Route path="mkt/meetings" element={<MktMeetings />} />
 
             </Route>
             <Route path="settings" element={<SettingsPage />} />

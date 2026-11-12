@@ -5,6 +5,8 @@ import type { Lead, MsConfig } from '@/types'
 export const MS_SCOPES = ['User.Read', 'Mail.Send']
 /** Only the inbox test asks for this (read-only). Needs its own permission in Azure. */
 export const MS_READ_SCOPES = ['Mail.Read']
+/** Only the Meetings page asks for this (read-only calendar). */
+export const MS_CAL_SCOPES = ['Calendars.Read']
 
 let cached: { key: string; app: PublicClientApplication } | null = null
 
@@ -107,7 +109,7 @@ export function friendlyMsError(raw: string): string {
     [/user_cancelled|user cancelled/i, 'Sign-in was cancelled.'],
     [/MailboxNotEnabledForRESTAPI|mailbox.*(not|inactive|soft)|ErrorInvalidUser|REST API is not yet supported/i, 'This account has no Exchange Online mailbox (no Microsoft 365 license with email), so it cannot send. Ask your admin to assign a license that includes Exchange Online.'],
     [/^401|InvalidAuthenticationToken|token.*expired/i, 'Microsoft rejected the sign-in token. Click Disconnect, then Connect Microsoft again.'],
-    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check the permission (Mail.Send to send, Mail.Read to read the inbox) is added under API permissions as Delegated and approved, then Disconnect and Connect again.'],
+    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check the permission (Mail.Send to send, Mail.Read for the inbox, Calendars.Read for meetings) is added under API permissions as Delegated and approved, then Disconnect and Connect again.'],
     [/^429|throttl|TooManyRequests|ApplicationThrottled/i, 'Microsoft is rate-limiting this mailbox (about 30 messages per minute). Wait a minute and retry with a slower pace.'],
     [/Failed to fetch|NetworkError|network/i, 'Could not reach Microsoft. Check your internet connection or whether a firewall or VPN blocks graph.microsoft.com.'],
   ]
@@ -117,9 +119,11 @@ export function friendlyMsError(raw: string): string {
 
 /** Fill {{name}}, {{firstName}}, {{company}}, {{title}}, {{owner}} from a lead. Unknown variables are left visible. */
 export function merge(text: string, l: Lead): string {
-  const vars: Record<string, string> = {
-    name: l.name, firstName: l.name.trim().split(/\s+/)[0] ?? '', company: l.company, title: l.title, owner: l.owner,
-  }
+  return fill(text, { name: l.name, firstName: l.name.trim().split(/\s+/)[0] ?? '', company: l.company, title: l.title, owner: l.owner })
+}
+
+/** Replace {{variables}} from a plain map. Unknown variables are left visible. */
+export function fill(text: string, vars: Record<string, string>): string {
   return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => (k in vars ? vars[k] : m))
 }
 
@@ -196,4 +200,59 @@ export async function listInbox(cfg: MsConfig, top = 15, search = ''): Promise<I
     id: m.id, subject: m.subject || '(no subject)', from: m.from?.emailAddress?.address ?? '', fromName: m.from?.emailAddress?.name ?? '',
     received: m.receivedDateTime, read: m.isRead, preview: m.bodyPreview ?? '',
   }))
+}
+
+// ---------- Meetings (calendar, read-only) ----------
+
+export interface MeetingPerson { name: string; address: string; type: 'required' | 'optional' | 'resource'; response: string }
+export interface Meeting {
+  id: string; subject: string; start: string; end: string // ISO, UTC
+  organizer: { name: string; address: string }
+  attendees: MeetingPerson[]
+  online: boolean; joinUrl: string; location: string; cancelled: boolean; preview: string
+}
+
+interface RawEvent {
+  id: string; subject?: string; isCancelled?: boolean; isAllDay?: boolean; isOnlineMeeting?: boolean; bodyPreview?: string
+  start: { dateTime: string }; end: { dateTime: string }
+  organizer?: { emailAddress?: { name?: string; address?: string } }
+  attendees?: { type?: string; status?: { response?: string }; emailAddress?: { name?: string; address?: string } }[]
+  onlineMeeting?: { joinUrl?: string } | null; location?: { displayName?: string }
+}
+
+const utc = (d: string) => new Date(d.endsWith('Z') ? d : d + 'Z').toISOString()
+
+/** Read calendar events between two dates (timed events only; all-day events are skipped). Nothing is stored. */
+export async function listMeetings(cfg: MsConfig, fromIso: string, toIso: string): Promise<Meeting[]> {
+  const accessToken = await token(cfg, MS_CAL_SCOPES)
+  const q = new URLSearchParams({
+    startDateTime: fromIso, endDateTime: toIso, $top: '100', $orderby: 'start/dateTime',
+    $select: 'id,subject,start,end,organizer,attendees,isOnlineMeeting,onlineMeeting,isCancelled,isAllDay,bodyPreview,location',
+  })
+  let url: string | undefined = `https://graph.microsoft.com/v1.0/me/calendarView?${q}`
+  const out: Meeting[] = []
+  for (let page = 0; url && page < 4; page++) {
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, Prefer: 'outlook.timezone="UTC"' } })
+    if (!res.ok) {
+      let msg = ''
+      try { msg = (await res.json()).error?.message ?? '' } catch { /* ignore */ }
+      throw new Error(friendlyMsError(`${res.status} ${msg}`))
+    }
+    const data = (await res.json()) as { value: RawEvent[]; '@odata.nextLink'?: string }
+    for (const e of data.value) {
+      if (e.isAllDay) continue
+      out.push({
+        id: e.id, subject: e.subject || '(no title)', start: utc(e.start.dateTime), end: utc(e.end.dateTime),
+        organizer: { name: e.organizer?.emailAddress?.name ?? '', address: (e.organizer?.emailAddress?.address ?? '').toLowerCase() },
+        attendees: (e.attendees ?? []).map((a) => ({
+          name: a.emailAddress?.name ?? '', address: (a.emailAddress?.address ?? '').toLowerCase(),
+          type: (a.type as MeetingPerson['type']) ?? 'required', response: a.status?.response ?? 'none',
+        })).filter((a) => a.address),
+        online: !!e.isOnlineMeeting, joinUrl: e.onlineMeeting?.joinUrl ?? '', location: e.location?.displayName ?? '',
+        cancelled: !!e.isCancelled, preview: e.bodyPreview ?? '',
+      })
+    }
+    url = data['@odata.nextLink']
+  }
+  return out
 }

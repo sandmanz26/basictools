@@ -21,6 +21,7 @@ export const ROUTE_ACCESS: Record<string, Permission[]> = {
   '/mkt': ['module.mkt'],
   '/mkt/settings': ['mkt.edit'],
   '/mkt/test': ['mkt.send'],
+  '/mkt/meetings': ['mkt.send'],
 }
 
 export function requiredFor(path: string): Permission[] | null {
