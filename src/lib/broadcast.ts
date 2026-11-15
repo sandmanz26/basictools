@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid'
 import { useStore } from '@/store'
 import { merge, sendMail } from '@/lib/microsoft'
 import { validEmail } from '@/lib/auth'
+import { loadAttachments } from '@/lib/attachments'
+import type { MailAttachment } from '@/lib/microsoft'
 
 /** Microsoft Graph allows ~30 messages/minute and 10,000 recipients/day per mailbox (personal accounts: far less). */
 export const GAP_MS = 2100
@@ -55,7 +57,13 @@ export async function runBroadcast(id: string) {
   let pause: { reason: string; resumeAt: string } | null = null
   try {
     const first = st().broadcasts.find((x) => x.id === id)
-    const queue = first ? Object.keys(first.recipients).filter((k) => first.recipients[k] !== 'sent') : []
+    // Files live in IndexedDB; read them once per run. A missing file pauses the broadcast rather than sending without it.
+    let files: MailAttachment[] = []
+    try { files = await loadAttachments(first?.attachments) } catch (e) {
+      interrupted = true
+      pause = { reason: `${e instanceof Error ? e.message : 'Attachments could not be read'}. Remove it or re-create the broadcast, then resume`, resumeAt: '' }
+    }
+    const queue = first && !interrupted ? Object.keys(first.recipients).filter((k) => first.recipients[k] !== 'sent') : []
     for (let n = 0; n < queue.length; n++) {
       if (r.stop) { interrupted = true; break }
       const b = st().broadcasts.find((x) => x.id === id)
@@ -72,9 +80,9 @@ export async function runBroadcast(id: string) {
       const subject = merge(b.subject, lead).replace(/[\r\n]+/g, ' ') // a lead's name must never add header lines
       const body = merge(b.body, lead) + (b.footer ? FOOTER : '')
       let error = ''
-      try { await sendMail(st().msConfig, lead.email, subject, body) } catch (e) { error = e instanceof Error ? e.message : String(e) }
+      try { await sendMail(st().msConfig, lead.email, subject, body, files) } catch (e) { error = e instanceof Error ? e.message : String(e) }
       st().setBroadcastRecipient(id, lead.id, error ? 'failed' : 'sent')
-      st().logEmail({ id: 'em-' + nanoid(6), leadId: lead.id, to: lead.email, subject, body: '', sentAt: new Date().toISOString(), sentBy: b.createdBy, status: error ? 'failed' : 'sent', error, broadcastId: id })
+      st().logEmail({ id: 'em-' + nanoid(6), leadId: lead.id, to: lead.email, subject, body: '', sentAt: new Date().toISOString(), sentBy: b.createdBy, status: error ? 'failed' : 'sent', error, broadcastId: id, ...(b.attachments?.length ? { attachments: b.attachments.map((a) => a.name) } : {}) })
 
       failuresInRow = error ? failuresInRow + 1 : 0
       if (failuresInRow >= MAX_CONSECUTIVE_FAILURES) { interrupted = true; pause = { reason: 'Stopped after 3 failures in a row. Check the error, then resume.', resumeAt: '' }; break } // token expired, throttled or limit hit: stop and let the user look

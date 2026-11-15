@@ -41,8 +41,16 @@ What a person with devtools can do today (all of it disappears once the server e
 3. `localStorage` is capped (~5 MB). 4,300 leads plus send logs approach it; the app warns, but the real fix is the database.
 4. Bulk email sends from the browser through Microsoft Graph. It stops when the tab closes and tokens sit in the browser. Move to the server queue (`server/` has throttling, retries, suppression, signed unsubscribe).
 5. The unsubscribe line is plain text ("reply STOP"). Real bulk mail needs a one-click unsubscribe link and `List-Unsubscribe` headers (server).
-6. Money is stored as JavaScript numbers (whole rupiah). Fine for IDR; use integer/decimal columns on the server and round per line.
+6. Money is stored as JavaScript numbers, rounded to the currency unit (whole rupiah/yen, cents for USD). Use integer or decimal columns on the server and round per line.
 7. Import heuristic: salary values under 1,000 are read as millions (`750` → Rp 750 jt). Review the preview before importing.
+
+## Microsoft permissions added for documents and meetings
+
+- `Files.ReadWrite.All` (delegated) lets a signed-in user upload to SharePoint/OneDrive. It is broad: the app only writes under the folder set in "SharePoint documents", but the token itself can reach any library that user can. Most tenants require admin consent. Skip it if you only want to paste links.
+- `Calendars.ReadWrite` (delegated) lets the app create and cancel the signed-in user's Outlook events (and sends invitations). `Calendars.Read` stays enough for read-only use.
+- Tokens stay in `sessionStorage` (MSAL); nothing Microsoft-related is saved with app data except file names, links and event ids.
+- Email attachments are limited to 3 MB per email, checked by extension and MIME type; executable and script types are blocked. Attachment bytes sit in the browser's IndexedDB until the broadcast is deleted.
+- The company logo is stored as a small data URL inside the app store (browser only for now).
 
 ## Go-live checklist
 

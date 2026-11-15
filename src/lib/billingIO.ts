@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid'
-import type { Frequency, Project, Schedule } from '@/types'
+import type { Currency, Frequency, Project, Schedule } from '@/types'
 import { parseDate } from '@/lib/importExport'
 import { parseValue } from '@/lib/leadsIO'
 import { dayLabel, repeatLabel } from '@/lib/billing'
@@ -20,6 +20,7 @@ const ALIASES: Record<string, string[]> = {
   termDays: ['payment terms (days)', 'term days', 'terms', 'top', 'term of payment'],
   pic: ['pic', 'owner', 'penanggung jawab'],
   notes: ['notes', 'note', 'catatan'],
+  currency: ['currency', 'mata uang', 'curr', 'ccy'],
 }
 
 const kindOf = (v: string): Schedule['kind'] => (/(pay|bayar|hutang|vendor|expense|bill|supplier)/i.test(v) ? 'payable' : 'receivable')
@@ -69,23 +70,27 @@ export function parseSchedules(rows: string[][], projects: Project[], today: str
       startDate: parseDate(g.startDate ?? '') || proj?.info.startDate || today, endDate: parseDate(g.endDate ?? '') || proj?.info.endDate || '',
       leadDays: g.leadDays ? Math.max(0, parseInt(g.leadDays, 10) || 0) : kind === 'receivable' ? 5 : 3, termDays: g.termDays ? Math.max(0, parseInt(g.termDays, 10) || 0) : 14,
       pic: g.pic ?? proj?.info.manager ?? '', notes: g.notes ?? '', active: true,
+      ...(g.currency ? { currency: currencyOf(g.currency) } : {}),
     })
   }
   out.unmatchedProjects = [...unmatched]
   return out
 }
 
-export const SCHEDULE_HEADERS = ['Type', 'Project', 'Client / Vendor', 'Title', 'Amount', 'Repeat', 'Day', 'Start', 'End', 'Remind days before', 'Payment terms (days)', 'PIC', 'Notes']
+/** 'usd', '$', 'dollar' → USD; 'yen', 'jpy', '¥' → JPY; anything else → IDR. */
+const currencyOf = (v: string): Currency => (/(usd|\$|dollar|dolar)/i.test(v) ? 'USD' : /(jpy|yen|¥)/i.test(v) ? 'JPY' : 'IDR')
+
+export const SCHEDULE_HEADERS = ['Type', 'Project', 'Client / Vendor', 'Title', 'Amount', 'Currency', 'Repeat', 'Day', 'Start', 'End', 'Remind days before', 'Payment terms (days)', 'PIC', 'Notes']
 
 export const scheduleTemplate = () => [
   SCHEDULE_HEADERS,
-  ['Invoice', 'Engineering Q4 2026', 'PT Contoh', 'Monthly service fee', 25000000, 'Monthly', 'end of month', '2026-11-01', '2027-04-30', 5, 14, 'Rina', ''],
-  ['Bill', '', 'Accurate', 'Subscription', 4500000, 'Monthly', 5, '2026-11-01', '', 3, '', 'Sari', ''],
+  ['Invoice', 'Engineering Q4 2026', 'PT Contoh', 'Monthly service fee', 25000000, 'IDR', 'Monthly', 'end of month', '2026-11-01', '2027-04-30', 5, 14, 'Rina', ''],
+  ['Bill', '', 'Accurate', 'Subscription', 4500000, 'IDR', 'Monthly', 5, '2026-11-01', '', 3, '', 'Sari', ''],
 ]
 
 export function schedulesToTable(list: Schedule[], projects: Project[]): (string | number)[][] {
   return [SCHEDULE_HEADERS, ...list.map((s) => [
-    s.kind === 'receivable' ? 'Invoice' : 'Bill', projects.find((p) => p.id === s.projectId)?.name ?? '', s.party, s.title, s.amount ?? '',
+    s.kind === 'receivable' ? 'Invoice' : 'Bill', projects.find((p) => p.id === s.projectId)?.name ?? '', s.party, s.title, s.amount ?? '', s.currency ?? 'IDR',
     s.frequency === 'once' ? 'Once' : repeatLabel(s).split(' · ')[0], s.frequency === 'once' ? '' : s.frequency === 'weekly' || s.frequency === 'biweekly' ? dayLabel(s) : s.day === 0 ? 'end of month' : s.day,
     s.startDate, s.endDate, s.leadDays, s.kind === 'receivable' ? s.termDays : '', s.pic, s.notes,
   ])]

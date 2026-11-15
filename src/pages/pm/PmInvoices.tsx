@@ -16,12 +16,17 @@ import { useMicrosoft } from '@/lib/useMicrosoft'
 import { downloadInvoicePdf, buildInvoicePdf } from '@/lib/invoicePdf'
 import { addDays, eventKey, localToday, nextOccurrence, repeatLabel, daysBetween } from '@/lib/billing'
 import { sendMail } from '@/lib/microsoft'
-import { INVOICE_STATUS, effectiveStatus, invoiceEmail, invoiceSubtotal, invoiceTax, invoiceTotal, money, nextInvoiceNumber, outstanding, todayStr } from '@/lib/pm'
+import { INVOICE_STATUS, balanceDue, billedTotals, effectiveStatus, invoiceEmail, invoiceSubtotal, invoiceTax, invoiceTotal, isPartlyPaid, lastPaymentDate, nextInvoiceNumber, outstanding, paidTotals, receivedTotal, todayStr, withheldTotal } from '@/lib/pm'
+import { curOf, currencyOptions, decimalsOf, fmtMoney, fmtTotals } from '@/lib/money'
+import { defaultBankId } from '@/store'
+import { FilesCard } from '@/components/FilesCard'
+import { InvoiceSteps, InvoicesGantt } from '@/components/pm/InvoiceTimeline'
+import { bankFor } from '@/lib/invoicePdf'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import type { Invoice, InvoiceStatus } from '@/types'
 
-const rp = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
+const rp = (n: number, c: Invoice['currency'] = 'IDR') => fmtMoney(n, c)
 const addBack = (d: string) => addDays(d, -7) // include a just-missed date
 
 function StatusBadge({ inv }: { inv: Invoice }) {
@@ -31,7 +36,7 @@ function StatusBadge({ inv }: { inv: Invoice }) {
 
 export default function PmInvoices() {
   const { project, info } = usePm()
-  const { invoices, schedules, scheduleEvents, billingProfile, addInvoice, updateInvoice, deleteInvoice, createInvoiceFromSchedule, msConfig } = useStore()
+  const { invoices, schedules, scheduleEvents, billingProfile, addInvoice, updateInvoice, deleteInvoice, createInvoiceFromSchedule, addPayment, removePayment, msConfig } = useStore()
   const [params, setParams] = useSearchParams()
   const { user } = useCurrentUser()
   const canInvoice = useCan()('pm.invoice')
@@ -42,6 +47,8 @@ export default function PmInvoices() {
   const [fromProject, setFromProject] = useState(false)
   const [pdfBusy, setPdfBusy] = useState('')
   const [reminded, setReminded] = useState('')
+  const [view, setView] = useState<'table' | 'timeline'>('table')
+  const [pay, setPay] = useState({ date: localToday(), amount: null as number | null, withheld: null as number | null, note: '' })
   const today = localToday()
 
   // Deep link from the billing reminders: /pm/invoices?open=<invoiceId>
@@ -52,8 +59,8 @@ export default function PmInvoices() {
 
   const list = invoices.filter((i) => i.projectId === project.id).sort((a, b) => b.issueDate.localeCompare(a.issueDate) || b.number.localeCompare(a.number))
   const open = invoices.find((i) => i.id === openId)
-  const billed = list.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0)
-  const paid = list.filter((i) => i.status === 'paid').reduce((a, i) => a + invoiceTotal(i), 0)
+  const billed = billedTotals(list)
+  const paid = paidTotals(list)
   const overdue = list.filter((i) => effectiveStatus(i) === 'overdue')
 
   const nextNumber = () => nextInvoiceNumber(invoices)
@@ -62,7 +69,8 @@ export default function PmInvoices() {
     const id = 'inv-' + nanoid(6)
     addInvoice({
       id, projectId: project.id, number: nextNumber(), clientName: info.client, clientEmail: info.stakeholders.find((x) => x.contact.includes('@'))?.contact ?? '',
-      issueDate: t, dueDate: addDays(t, 14), items: [{ id: nanoid(5), description: '', qty: 1, unitPrice: 0 }], taxPct: 11, status: 'draft', notes: billingProfile.paymentNote, sentAt: '',
+      issueDate: t, dueDate: addDays(t, billingProfile.defaultTermDays ?? 14), items: [{ id: nanoid(5), description: '', qty: 1, unitPrice: 0 }], taxPct: billingProfile.defaultTaxPct ?? 11, status: 'draft', notes: billingProfile.paymentNote, sentAt: '',
+      currency: 'IDR', bankId: defaultBankId(billingProfile.banks, 'IDR'),
     })
     setSendErr(''); setOpenId(id)
   }
@@ -77,7 +85,7 @@ export default function PmInvoices() {
     setSendErr(''); setSending(true)
     try {
       const late = daysBetween(inv.dueDate, today)
-      const body = `Dear ${inv.clientName || 'Sir/Madam'},\n\nThis is a friendly reminder that invoice ${inv.number} for ${project.name} (${rp(invoiceTotal(inv))}) was due on ${fmtDate(inv.dueDate)}${late > 0 ? ` (${late} day${late === 1 ? '' : 's'} ago)` : ''}.\n\nIf you have already paid, please ignore this message. Otherwise we would appreciate your payment at your earliest convenience. The invoice is attached again for reference.\n\nThank you,\n${user.name}`
+      const body = `Dear ${inv.clientName || 'Sir/Madam'},\n\nThis is a friendly reminder that invoice ${inv.number} for ${project.name} (${rp(balanceDue(inv) || invoiceTotal(inv), curOf(inv))}) was due on ${fmtDate(inv.dueDate)}${late > 0 ? ` (${late} day${late === 1 ? '' : 's'} ago)` : ''}.\n\nIf you have already paid, please ignore this message. Otherwise we would appreciate your payment at your earliest convenience. The invoice is attached again for reference.\n\nThank you,\n${user.name}`
       const pdf = await buildInvoicePdf(inv, project.name, billingProfile)
       await sendMail(msConfig, inv.clientEmail.trim(), `Payment reminder: invoice ${inv.number}`, body, [{ name: pdf.filename, contentType: 'application/pdf', base64: pdf.base64 }])
       setReminded(inv.id)
@@ -114,9 +122,9 @@ export default function PmInvoices() {
         {!canInvoice && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Your role can view invoices but not create or send them.</div>}
 
         <div className="grid gap-3 sm:grid-cols-4">
-          <Card><div className="text-xs text-muted-foreground">Billed</div><div className="mt-1 text-xl font-semibold tabular-nums">{money(billed)}</div></Card>
-          <Card><div className="text-xs text-muted-foreground">Paid</div><div className="mt-1 text-xl font-semibold text-emerald-600 tabular-nums">{money(paid)}</div></Card>
-          <Card><div className="text-xs text-muted-foreground">Outstanding</div><div className="mt-1 text-xl font-semibold tabular-nums">{money(outstanding(list))}</div></Card>
+          <Card><div className="text-xs text-muted-foreground">Billed</div><div className="mt-1 text-xl font-semibold tabular-nums">{fmtTotals(billed, true)}</div></Card>
+          <Card><div className="text-xs text-muted-foreground">Paid</div><div className="mt-1 text-xl font-semibold text-emerald-600 tabular-nums">{fmtTotals(paid, true)}</div></Card>
+          <Card><div className="text-xs text-muted-foreground">Outstanding</div><div className="mt-1 text-xl font-semibold tabular-nums">{fmtTotals(outstanding(list), true)}</div></Card>
           <Card><div className="text-xs text-muted-foreground">Overdue</div><div className={cn('mt-1 text-xl font-semibold tabular-nums', overdue.length && 'text-red-600')}>{overdue.length}</div></Card>
         </div>
 
@@ -151,7 +159,14 @@ export default function PmInvoices() {
           )
         })()}
 
-        {list.length === 0 ? <Empty>No invoices for this project yet. Use “From project data” to build one from milestones and finished work.</Empty> : (
+        {list.length > 0 && (
+          <div className="flex gap-1" role="group" aria-label="Invoice view">
+            <Button size="sm" variant={view === 'table' ? 'default' : 'outline'} aria-pressed={view === 'table'} onClick={() => setView('table')}>Table</Button>
+            <Button size="sm" variant={view === 'timeline' ? 'default' : 'outline'} aria-pressed={view === 'timeline'} onClick={() => setView('timeline')}>Timeline</Button>
+          </div>
+        )}
+        {view === 'timeline' && list.length > 0 && <InvoicesGantt invoices={list} onOpen={(id) => { setSendErr(''); setOpenId(id) }} />}
+        {view === 'table' && (list.length === 0 ? <Empty>No invoices for this project yet. Use “From project data” to build one from milestones and finished work.</Empty> : (
           <div className="overflow-x-auto rounded-xl border bg-card">
             <table className="w-full min-w-[44rem] text-sm">
               <thead className="bg-muted/60 text-left text-xs text-muted-foreground">
@@ -164,8 +179,8 @@ export default function PmInvoices() {
                     <td className="px-3 py-2.5">{i.clientName || '—'}<div className="text-xs text-muted-foreground">{i.clientEmail}</div></td>
                     <td className="px-3 py-2.5 text-muted-foreground">{fmtDate(i.issueDate)}</td>
                     <td className={cn('px-3 py-2.5', effectiveStatus(i) === 'overdue' ? 'font-medium text-red-600' : 'text-muted-foreground')}>{fmtDate(i.dueDate)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums">{rp(invoiceTotal(i))}</td>
-                    <td className="px-3 py-2.5"><StatusBadge inv={i} /></td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{rp(invoiceTotal(i), curOf(i))}{(i.payments?.length ?? 0) > 0 && <div className="text-[11px] text-muted-foreground">{i.status !== 'paid' && balanceDue(i) > 0 ? `${rp(balanceDue(i), curOf(i))} left` : `paid ${fmtDate(lastPaymentDate(i))}`}</div>}</td>
+                    <td className="px-3 py-2.5"><StatusBadge inv={i} />{isPartlyPaid(i) && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">partial</span>}</td>
                     <td className="whitespace-nowrap px-1" onClick={(e) => e.stopPropagation()}>
                       <Button variant="ghost" size="icon-xs" title="Download PDF" disabled={pdfBusy === i.id} onClick={() => void download(i)}>{pdfBusy === i.id ? <Loader2 className="animate-spin" /> : <Download />}</Button>
                       {canInvoice && i.status === 'sent' && <Button variant="ghost" size="icon-xs" title="Mark as paid" onClick={() => upd(i.id, { status: 'paid' })}><BadgeCheck /></Button>}
@@ -175,7 +190,7 @@ export default function PmInvoices() {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
       </div>
 
       <InvoiceFromProjectDialog open={fromProject} onOpenChange={setFromProject} projectId={project.id} onCreated={(id) => { setSendErr(''); setOpenId(id) }} />
@@ -196,7 +211,11 @@ export default function PmInvoices() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client email</Label><Input disabled={!canInvoice} type="email" value={open.clientEmail} onChange={(e) => upd(open.id, { clientEmail: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Issue date</Label><Input disabled={!canInvoice} type="date" value={open.issueDate} onChange={(e) => upd(open.id, { issueDate: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Due date</Label><Input disabled={!canInvoice} type="date" value={open.dueDate} onChange={(e) => upd(open.id, { dueDate: e.target.value })} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Currency</Label><NativeSelect disabled={!canInvoice || (open.payments?.length ?? 0) > 0} className="w-full" value={curOf(open)} onChange={(v) => upd(open.id, { currency: v as Invoice['currency'], bankId: defaultBankId(billingProfile.banks, v as Invoice['currency']) })} options={currencyOptions} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays into</Label>
+                    <NativeSelect disabled={!canInvoice} className="w-full" value={bankFor(open, billingProfile)?.id ?? ''} onChange={(v) => upd(open.id, { bankId: v })} options={(billingProfile.banks ?? []).length ? (billingProfile.banks ?? []).map((b) => ({ value: b.id, label: `${b.bank} ${b.number} (${b.currency})` })) : [{ value: '', label: 'No bank account yet' }]} /></div>
                 </div>
+                {!(billingProfile.banks ?? []).length && <p className="text-xs text-muted-foreground">Add your bank accounts in <Link to="/pm/settings" className="underline">PM settings → Invoice template</Link>.</p>}
 
                 <div className="space-y-2">
                   <Label className="text-xs text-muted-foreground">Line items</Label>
@@ -206,7 +225,7 @@ export default function PmInvoices() {
                       <div key={it.id} className="grid grid-cols-[1fr_4rem_8rem_2rem] items-center gap-2">
                         <Input disabled={!canInvoice} placeholder="Description" value={it.description} onChange={(e) => setIt({ description: e.target.value })} />
                         <NumberInput disabled={!canInvoice} min={1} value={it.qty} onValueChange={(v) => setIt({ qty: v ?? 0 })} />
-                        <NumberInput disabled={!canInvoice} min={0} placeholder="Unit price" value={it.unitPrice || null} onValueChange={(v) => setIt({ unitPrice: v ?? 0 })} />
+                        <NumberInput disabled={!canInvoice} min={0} decimals={decimalsOf(curOf(open))} placeholder="Unit price" value={it.unitPrice || null} onValueChange={(v) => setIt({ unitPrice: v ?? 0 })} />
                         {canInvoice && <Button variant="ghost" size="icon-xs" disabled={open.items.length <= 1} onClick={() => upd(open.id, { items: open.items.filter((x) => x.id !== it.id) })}><Trash2 className="text-destructive" /></Button>}
                       </div>
                     )
@@ -215,10 +234,53 @@ export default function PmInvoices() {
                 </div>
 
                 <div className="ml-auto w-64 space-y-1 text-sm tabular-nums">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span>{rp(invoiceSubtotal(open))}</div>
-                  <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5 text-muted-foreground">Tax <NumberInput disabled={!canInvoice} className="h-6 w-14 px-1.5 text-xs" min={0} value={open.taxPct} onValueChange={(v) => upd(open.id, { taxPct: v ?? 0 })} /> %</span>{rp(invoiceTax(open))}</div>
-                  <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span>{rp(invoiceTotal(open))}</div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span>{rp(invoiceSubtotal(open), curOf(open))}</div>
+                  <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5 text-muted-foreground">Tax <NumberInput disabled={!canInvoice} className="h-6 w-14 px-1.5 text-xs" min={0} value={open.taxPct} onValueChange={(v) => upd(open.id, { taxPct: v ?? 0 })} /> %</span>{rp(invoiceTax(open), curOf(open))}</div>
+                  <div className="flex justify-between border-t pt-1 font-semibold"><span>Total</span>{rp(invoiceTotal(open), curOf(open))}</div>
                 </div>
+
+                {open.status !== 'draft' && (() => {
+                  const cur = curOf(open), dec = decimalsOf(cur), left = balanceDue(open)
+                  const add = () => {
+                    const amount = pay.amount ?? 0, withheld = pay.withheld ?? 0
+                    if (amount <= 0 && withheld <= 0) return
+                    addPayment(open.id, { id: nanoid(6), date: pay.date, amount, withheld, note: pay.note.trim() })
+                    setPay({ date: localToday(), amount: null, withheld: null, note: '' })
+                  }
+                  return (
+                    <div className="space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center justify-between"><Label className="text-sm font-semibold">Payments received</Label>
+                        <span className={cn('text-xs font-medium', left > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-emerald-700 dark:text-emerald-400')}>{left > 0 ? `${rp(left, cur)} still due` : 'Paid in full'}</span></div>
+                      <p className="text-xs text-muted-foreground">Clients often pay late and a little less, because they withhold income tax (PPh). Record what arrived and what was withheld; the invoice closes when both together cover the total.</p>
+                      {(open.payments ?? []).map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5 text-sm">
+                          <span className="w-24 shrink-0 tabular-nums">{fmtDate(p.date)}</span>
+                          <span className="tabular-nums">{rp(p.amount, cur)}</span>
+                          {p.withheld > 0 && <span className="text-xs text-muted-foreground">+ {rp(p.withheld, cur)} PPh</span>}
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{p.note}</span>
+                          {canInvoice && <Button variant="ghost" size="icon-xs" title="Remove this payment" onClick={() => removePayment(open.id, p.id)}><Trash2 className="text-destructive" /></Button>}
+                        </div>
+                      ))}
+                      {(open.payments?.length ?? 0) > 0 && <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground tabular-nums"><span>Received {rp(receivedTotal(open), cur)}</span><span>Withheld {rp(withheldTotal(open), cur)}</span></div>}
+                      {canInvoice && (
+                        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[8rem_1fr_1fr]">
+                          <div className="space-y-1"><Label className="text-[11px] text-muted-foreground">Date received</Label><Input type="date" value={pay.date} onChange={(e) => setPay({ ...pay, date: e.target.value })} /></div>
+                          <div className="space-y-1"><Label className="text-[11px] text-muted-foreground">Amount received</Label><NumberInput min={0} decimals={dec} value={pay.amount} onValueChange={(v) => setPay({ ...pay, amount: v })} /></div>
+                          <div className="space-y-1"><Label className="text-[11px] text-muted-foreground">Tax withheld (PPh)</Label><NumberInput min={0} decimals={dec} value={pay.withheld} onValueChange={(v) => setPay({ ...pay, withheld: v })} /></div>
+                          <div className="col-span-2 space-y-1 sm:col-span-3"><Label className="text-[11px] text-muted-foreground">Note (optional)</Label><Input value={pay.note} placeholder="e.g. Transfer from BCA, bukti potong to follow" onChange={(e) => setPay({ ...pay, note: e.target.value })} /></div>
+                          <div className="col-span-2 flex gap-2 sm:col-span-3">
+                            <Button size="sm" disabled={(pay.amount ?? 0) <= 0 && (pay.withheld ?? 0) <= 0} onClick={add}><BadgeCheck /> Record payment</Button>
+                            {left > 0 && <Button size="sm" variant="outline" onClick={() => setPay({ ...pay, amount: left })}>Fill the balance</Button>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
+                <div className="space-y-2"><Label className="text-sm font-semibold">Timeline</Label><InvoiceSteps invoice={open} /></div>
+
+                <FilesCard title="Documents" files={open.attachments ?? []} onChange={(f) => upd(open.id, { attachments: f })} categories={['invoice', 'tax', 'other']} folder={[project.name, 'Invoices', open.number]} canEdit={canInvoice} hint="Signed copy, purchase order, tax withholding slip (bukti potong) …" />
 
                 <div className="space-y-1"><Label className="text-xs text-muted-foreground">Notes (shown in the email)</Label><Textarea disabled={!canInvoice} rows={3} placeholder="Payment instructions, bank account…" value={open.notes} onChange={(e) => upd(open.id, { notes: e.target.value })} /></div>
 

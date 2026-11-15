@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Internal handoff notes (contain deployment/Azure context, never commit)
+HANDOFF.md

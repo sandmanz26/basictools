@@ -3,8 +3,8 @@
 One workspace for **hiring (HR)**, **project management (PM)** and **outreach (Marketing)**.
 
 - **HR** — hiring pipeline (table + kanban), talent pool shared across projects, positions with rich job descriptions and test questions, interview scheduling with reschedule history, CSV import/export, shareable read-only links.
-- **PM** — all-projects monitor, per-project dashboard, work board, timeline, risks, team, budget, status updates, **custom project statuses**, invoices (PDF download, create from project data, recurring schedules that prepare drafts), billing reminders (+ calendar export).
-- **Marketing** — lead pipeline with custom fields, email outreach and **broadcast to thousands of leads** (daily caps, send windows, auto-resume, test send) through Microsoft 365.
+- **PM** — all-projects monitor (list or **timeline view**), per-project dashboard, **progress timeline**, **meetings** (schedule in Outlook, attach calendar events, notes and decisions per meeting), project files in **SharePoint** (NDA, agreement, SOW), work board, risks, team, budget, status updates, **custom project statuses**, invoices (**IDR / USD / JPY**, PDF with logo and bank accounts, **partial payments and PPh withholding**, invoice timeline, recurring schedules that prepare drafts), billing reminders with vendor bank details and attached vendor invoices.
+- **Marketing** — lead pipeline with custom fields, email outreach and **broadcast to thousands of leads** (daily caps, send windows, auto-resume, test send, **attachments**) through Microsoft 365, plus a filterable **sent history**.
 - **Access** — login/register with admin approval, roles and permissions, pages lock for roles without access.
 
 > **Status:** the web app runs entirely in the browser with demo data (zustand + `localStorage`). A production backend is scaffolded in [`server/`](server/README.md) and the migration plan is in [`docs/FRONTEND_MIGRATION.md`](docs/FRONTEND_MIGRATION.md). Until that migration is done, treat the web app as a **prototype**: see [`docs/SECURITY.md`](docs/SECURITY.md).

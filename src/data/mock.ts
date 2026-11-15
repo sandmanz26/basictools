@@ -74,7 +74,7 @@ export const USERS: User[] = [
 export const PROJECTS: Project[] = [
   { id: 'p1', name: 'Engineering Q4 2026', description: 'Product engineering hiring for the Q4 roadmap', status: 'active', createdAt: '2026-09-15', stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: ALL_FEATURES(),
     info: {
-      ...DEFAULT_INFO(), health: 'at_risk', phase: 'execution', methodology: 'Agile', priority: 'high', sponsor: 'Rina (CTO)', manager: 'Rina (PM)',
+      ...DEFAULT_INFO(), health: 'at_risk', phase: 'ongoing', methodology: 'Agile', priority: 'high', sponsor: 'Rina (CTO)', manager: 'Rina (PM)',
       client: 'Internal – Product', startDate: '2026-10-01', endDate: '2027-02-26', budget: 1_800_000_000,
       objectives: '- Ship Customer Portal v2 to all enterprise customers\n- Cut support tickets about self-service by 30%\n- Build the core engineering team for 2027',
       scopeIn: '- Web portal (React)\n- Public API v2\n- SSO and role-based access\n- QA automation', scopeOut: '- Native mobile apps\n- Legacy portal migration tooling',

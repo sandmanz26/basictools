@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware'
 import { appStorage } from '@/lib/safeStorage'
 import { nanoid } from 'nanoid'
 import type {
-  Broadcast, MeetingFollowup,
+  Broadcast, MeetingFollowup, ProjectMeeting, Payment, BankAccount,
   Candidate,
   BillingProfile,
   Invoice,
@@ -33,11 +33,14 @@ import type {
 import { SCHEDULES } from '@/data/mock'
 import { BUDGET, CANDIDATES, INVOICES, EMAIL_TEMPLATES, LEADS, MEMBERS, MILESTONES, POSITIONS, PROJECTS, RISKS, ROLES, TALENTS, TASKS, UPDATES, USERS } from '@/data/mock'
 import { eventKey, localDay, localToday, occurrenceDates, periodLabel, addDays as addDaysStr } from '@/lib/billing'
-import { nextInvoiceNumber } from '@/lib/pm'
+import { nextInvoiceNumber, balanceDue, lastPaymentDate, migratePhase } from '@/lib/pm'
 import { DEFAULT_STATUSES, FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
 import { DEFAULT_LEAD_COLUMNS, DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
+
+/** Sent-email history keeps the newest this-many rows (a 4,300-person broadcast must fit). */
+export const EMAIL_LOG_CAP = 6000
 
 export interface ImportOpts { onDuplicate: 'skip' | 'update'; createPositions: boolean }
 export interface ImportSummary { added: number; updated: number; skipped: number; newTalents: number; newPositions: number }
@@ -67,6 +70,7 @@ interface State {
   scheduleEvents: Record<string, ScheduleEvent>
   broadcasts: Broadcast[]
   meetingFollowups: Record<string, MeetingFollowup>
+  projectMeetings: ProjectMeeting[]
   msConfig: MsConfig
   currentUserId: string
   activeProjectId: string
@@ -156,8 +160,34 @@ interface State {
   deleteShare: (id: string) => void
   bumpShare: (id: string) => void
   setMeetingFollowup: (meetingId: string, f: MeetingFollowup | null) => void
+  addProjectMeeting: (m: ProjectMeeting) => void
+  updateProjectMeeting: (id: string, patch: Partial<ProjectMeeting>) => void
+  deleteProjectMeeting: (id: string) => void
+  addPayment: (invoiceId: string, p: Payment) => void
+  removePayment: (invoiceId: string, paymentId: string) => void
   reset: () => void
 }
+
+/** Our bank account for a currency (the first one that matches, else the first account). */
+export const defaultBankId = (banks: BankAccount[] | undefined, currency: Schedule['currency'] = 'IDR') =>
+  (banks?.find((b) => b.currency === currency) ?? banks?.[0])?.id ?? ''
+
+/** v9: five project phases became three, and the single bank account became a list. */
+function migrateV9(persisted: unknown) {
+  const s = (persisted ?? {}) as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (Array.isArray(s.projects)) s.projects = s.projects.map((p: Project) => ({ ...p, info: { ...p.info, phase: migratePhase(String(p.info?.phase ?? '')) } }))
+  const bp = s.billingProfile as (BillingProfile & { bankName?: string; bankAccount?: string; bankHolder?: string }) | undefined
+  if (bp && !bp.banks) {
+    const { bankName, bankAccount, bankHolder, ...rest } = bp
+    s.billingProfile = { ...rest, banks: bankName || bankAccount ? [{ id: nanoid(5), bank: bankName ?? '', number: bankAccount ?? '', holder: bankHolder ?? '', currency: 'IDR' }] : [], defaultTaxPct: 11, defaultTermDays: 14 }
+  }
+  return s
+}
+
+const DEMO_MEETINGS: ProjectMeeting[] = [
+  { id: 'mt-1', projectId: 'p1', title: 'Kick-off with client', date: '2026-09-02', startTime: '10:00', endTime: '11:00', attendees: ['Rina (PM)', 'Budi (Client)', 'Sari (Sponsor)'], summary: 'Walked through goals, timeline and who does what.', decisions: 'Weekly check-in every Monday. Client sends brand assets by Friday.', location: 'Client office', joinUrl: '', outlookId: '', status: 'held', createdBy: 'Rina (PM)', createdAt: '2026-09-02T11:30:00.000Z' },
+  { id: 'mt-2', projectId: 'p1', title: 'Scope review', date: '2026-10-06', startTime: '14:00', endTime: '15:00', attendees: ['Rina (PM)', 'Budi (Client)'], summary: 'Reviewed what is in and out of scope for phase 2.', decisions: 'Reporting module moves to phase 3. Client signs the change request.', location: 'Teams', joinUrl: '', outlookId: '', status: 'held', createdBy: 'Rina (PM)', createdAt: '2026-10-06T15:10:00.000Z' },
+]
 
 const seed = () => ({
   projects: PROJECTS,
@@ -191,10 +221,11 @@ const seed = () => ({
   invoices: INVOICES,
   schedules: SCHEDULES,
   statuses: DEFAULT_STATUSES(),
-  billingProfile: { company: '', address: '', email: '', phone: '', taxId: '', bankName: '', bankAccount: '', bankHolder: '', paymentNote: '' } as BillingProfile,
+  billingProfile: { company: '', address: '', email: '', phone: '', taxId: '', paymentNote: '', banks: [], defaultTaxPct: 11, defaultTermDays: 14 } as BillingProfile,
   scheduleEvents: {} as Record<string, ScheduleEvent>,
   broadcasts: [] as Broadcast[],
   meetingFollowups: {} as Record<string, MeetingFollowup>,
+  projectMeetings: DEMO_MEETINGS,
   msConfig: { clientId: (import.meta.env.VITE_MS_CLIENT_ID as string | undefined) ?? '', tenant: (import.meta.env.VITE_MS_TENANT as string | undefined) ?? 'common' },
   currentUserId: 'u1',
   activeProjectId: 'p1',
@@ -292,7 +323,7 @@ export const useStore = create<State>()(
       deleteTemplate: (id) => set((s) => ({ templates: s.templates.filter((x) => x.id !== id) })),
       logEmail: (e) =>
         set((s) => ({
-          emails: [e, ...s.emails].slice(0, 2000),
+          emails: [e, ...s.emails].slice(0, EMAIL_LOG_CAP),
           leads: e.status === 'sent' ? s.leads.map((l) => (l.id === e.leadId ? { ...l, lastContactAt: e.sentAt.slice(0, 10) } : l)) : s.leads,
         })),
       addSchedule: (x) => set((s) => ({ schedules: [x, ...s.schedules] })),
@@ -322,7 +353,8 @@ export const useStore = create<State>()(
           const ev: ScheduleEvent = { issuedAt: '', invoiceNo: '', paidAt: '', skipped: false, ...(s.scheduleEvents[next.scheduleKey] as Partial<ScheduleEvent> | undefined) }
           const sentNow = next.status !== 'draft' && !ev.issuedAt
           const paidNow = next.status === 'paid' && !ev.paidAt
-          if (!sentNow && !paidNow && ev.invoiceNo === next.number) return { invoices }
+          const reopened = prev?.status === 'paid' && next.status !== 'paid' && !!ev.paidAt // a payment was removed again
+          if (!sentNow && !paidNow && !reopened && ev.invoiceNo === next.number) return { invoices }
           return {
             invoices,
             scheduleEvents: {
@@ -330,11 +362,24 @@ export const useStore = create<State>()(
               [next.scheduleKey]: {
                 ...ev, invoiceId: next.id, invoiceNo: next.number,
                 issuedAt: ev.issuedAt || (next.status !== 'draft' ? (next.sentAt ? localDay(next.sentAt) : next.issueDate) : ''),
-                paidAt: next.status === 'paid' ? ev.paidAt || localToday() : ev.paidAt,
+                paidAt: next.status === 'paid' ? ev.paidAt || lastPaymentDate(next) || localToday() : reopened ? '' : ev.paidAt,
               },
             },
           }
         }),
+      // Record money received. The invoice closes by itself once payments plus withheld tax cover the total.
+      addPayment: (invoiceId, p) => {
+        const inv = get().invoices.find((x) => x.id === invoiceId)
+        if (!inv) return
+        const next = { ...inv, payments: [...(inv.payments ?? []), p] }
+        get().updateInvoice(invoiceId, { payments: next.payments, status: balanceDue(next) <= 0 ? 'paid' : inv.status === 'draft' ? 'sent' : inv.status === 'paid' ? 'sent' : inv.status })
+      },
+      removePayment: (invoiceId, paymentId) => {
+        const inv = get().invoices.find((x) => x.id === invoiceId)
+        if (!inv) return
+        const next = { ...inv, payments: (inv.payments ?? []).filter((x) => x.id !== paymentId) }
+        get().updateInvoice(invoiceId, { payments: next.payments, status: balanceDue(next) <= 0 && next.payments.length ? 'paid' : inv.status === 'paid' ? 'sent' : inv.status })
+      },
       deleteInvoice: (id) =>
         set((s) => ({
           invoices: s.invoices.filter((x) => x.id !== id),
@@ -369,7 +414,8 @@ export const useStore = create<State>()(
         const inv: Invoice = {
           id, projectId: project.id, number, clientName: sch.party || project.info.client,
           clientEmail: t?.clientEmail || project.info.stakeholders.find((x) => x.contact.includes('@'))?.contact || '',
-          issueDate: date, dueDate: addDaysStr(date, sch.termDays), items, taxPct: t?.taxPct ?? 11, status: 'draft',
+          issueDate: date, dueDate: addDaysStr(date, sch.termDays), items, taxPct: t?.taxPct ?? s.billingProfile.defaultTaxPct ?? 11, status: 'draft',
+          currency: sch.currency ?? 'IDR', bankId: sch.bankId ?? defaultBankId(s.billingProfile.banks, sch.currency),
           notes: t?.notes || s.billingProfile.paymentNote, sentAt: '', scheduleKey: key, period,
         }
         set((st) => ({
@@ -407,6 +453,9 @@ export const useStore = create<State>()(
         if (f) next[id] = f; else delete next[id]
         return { meetingFollowups: next }
       }),
+      addProjectMeeting: (m) => set((s) => ({ projectMeetings: [m, ...s.projectMeetings] })),
+      updateProjectMeeting: (id, patch) => set((s) => ({ projectMeetings: s.projectMeetings.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      deleteProjectMeeting: (id) => set((s) => ({ projectMeetings: s.projectMeetings.filter((x) => x.id !== id) })),
       setMsConfig: (patch) => set((s) => ({ msConfig: { ...s.msConfig, ...patch } })),
 
       setUser: (id) => set({ currentUserId: id }),
@@ -438,6 +487,7 @@ export const useStore = create<State>()(
             budget: s.budget.filter((x) => x.projectId !== id),
             updates: s.updates.filter((x) => x.projectId !== id),
             invoices: s.invoices.filter((x) => x.projectId !== id),
+            projectMeetings: s.projectMeetings.filter((x) => x.projectId !== id),
             activeProjectId: s.activeProjectId === id ? (projects.find((p) => p.status === 'active') ?? projects[0])?.id ?? '' : s.activeProjectId,
           }
         }),
@@ -725,7 +775,7 @@ export const useStore = create<State>()(
       reset: () => set((s) => ({ ...seed(), currentUserId: s.currentUserId, users: [...USERS, ...s.users.filter((u) => !USERS.some((d) => d.id === u.id))] })),
     }),
     // Bump `version` and extend `migrate` when the shape changes; do not rename the key (that orphans people's data).
-    { name: 'hiring-pipeline-v8', storage: appStorage, version: 8, migrate: (persisted) => persisted as State },
+    { name: 'hiring-pipeline-v8', storage: appStorage, version: 9, migrate: (persisted, version) => (version < 9 ? migrateV9(persisted) : persisted) as State },
   ),
 )
 

@@ -4,13 +4,13 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Dropdown } from '@/components/Dropdown'
 import { MicrosoftCard } from '@/components/MicrosoftCard'
+import { InvoiceTemplateCard } from '@/components/pm/InvoiceTemplateCard'
 import { SaveBar } from '@/components/SaveBar'
 import { StageEditor } from '@/components/StageEditor'
-import { Card, Field, PageHeader, pageCls, usePm } from '@/components/pm/ui'
+import { Card, PageHeader, pageCls, usePm } from '@/components/pm/ui'
 import { useCan } from '@/store'
 import { useDraft } from '@/lib/useDraft'
 import { STAGE_COLORS } from '@/lib/constants'
@@ -131,20 +131,7 @@ export default function PmSettings() {
           {canEdit && <Button className="mt-3" variant="outline" onClick={() => d.set({ statuses: [...statuses, { id: 's_' + nanoid(5), label: 'New status', color: 'teal', attention: false }] })}><Plus /> Add status</Button>}
         </Card>
 
-        <Card title="Billing profile (printed on invoice PDFs)">
-          <p className="mb-3 text-sm text-muted-foreground">Your company details and bank account. They appear on every downloaded or emailed invoice, shared by all projects.</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Company name"><Input disabled={!canBilling} value={bp.company} onChange={(e) => setBp({ company: e.target.value })} /></Field>
-            <Field label="Tax ID (NPWP)"><Input disabled={!canBilling} value={bp.taxId} onChange={(e) => setBp({ taxId: e.target.value })} /></Field>
-            <Field label="Address" className="sm:col-span-2"><Textarea disabled={!canBilling} rows={2} value={bp.address} onChange={(e) => setBp({ address: e.target.value })} /></Field>
-            <Field label="Billing email"><Input disabled={!canBilling} type="email" value={bp.email} onChange={(e) => setBp({ email: e.target.value })} /></Field>
-            <Field label="Phone"><Input disabled={!canBilling} value={bp.phone} onChange={(e) => setBp({ phone: e.target.value })} /></Field>
-            <Field label="Bank"><Input disabled={!canBilling} placeholder="e.g. BCA" value={bp.bankName} onChange={(e) => setBp({ bankName: e.target.value })} /></Field>
-            <Field label="Account number"><Input disabled={!canBilling} value={bp.bankAccount} onChange={(e) => setBp({ bankAccount: e.target.value })} /></Field>
-            <Field label="Account name" className="sm:col-span-2"><Input disabled={!canBilling} value={bp.bankHolder} onChange={(e) => setBp({ bankHolder: e.target.value })} /></Field>
-            <Field label="Default invoice note" className="sm:col-span-2"><Textarea disabled={!canBilling} rows={2} placeholder="e.g. Please pay within 14 days and include the invoice number in the transfer." value={bp.paymentNote} onChange={(e) => setBp({ paymentNote: e.target.value })} /></Field>
-          </div>
-        </Card>
+        <InvoiceTemplateCard bp={bp} setBp={setBp} can={canBilling} />
 
         {features.board && (
           <Card title="Work board workflow">

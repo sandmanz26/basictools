@@ -69,6 +69,8 @@ export function MicrosoftGuide({ defaultOpen }: { defaultOpen?: boolean }) {
             <p className="text-xs">The app sends email as the person who signs in. It cannot read an inbox unless you also add the optional permission below.</p>
             <p><b>Optional, only for “Microsoft test lab” (reading your inbox):</b> repeat the same steps and also tick <Copyable text="Mail.Read" /> (group <b>Mail</b>, Delegated). It is read-only and normally needs no admin. The first time you load the inbox, Microsoft shows a “Permissions requested” popup to accept. Skip it if you do not need that test.</p>
             <p><b>Optional, for “Meetings & follow-up” (reading your calendar):</b> also tick <Copyable text="Calendars.Read" /> (group <b>Calendars</b>, Delegated). Read-only, normally no admin needed; Microsoft shows a “Permissions requested” popup the first time you load meetings.</p>
+            <p><b>Optional, for scheduling meetings from a project:</b> tick <Copyable text="Calendars.ReadWrite" /> instead of Calendars.Read. It lets HireFlow create the Outlook event and send the invitations.</p>
+            <p><b>Optional, for project documents in SharePoint / OneDrive:</b> tick <Copyable text="Files.ReadWrite.All" /> (Delegated). Most companies need an admin to approve it. HireFlow only touches the folder you set in “SharePoint documents” above.</p>
           </Step>
 
           <Step n={5} title="Approve the permissions">

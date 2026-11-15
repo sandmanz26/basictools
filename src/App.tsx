@@ -17,6 +17,8 @@ const PmProjects = lazy(() => import('@/pages/pm/PmProjects'))
 const PmInvoices = lazy(() => import('@/pages/pm/PmInvoices'))
 const PmBilling = lazy(() => import('@/pages/pm/PmBilling'))
 const PmInfo = lazy(() => import('@/pages/pm/PmInfo'))
+const PmMeetings = lazy(() => import('@/pages/pm/PmMeetings'))
+const PmProgress = lazy(() => import('@/pages/pm/PmProgress'))
 const PmBoard = lazy(() => import('@/pages/pm/PmBoard'))
 const PmTimeline = lazy(() => import('@/pages/pm/PmTimeline'))
 const PmRisks = lazy(() => import('@/pages/pm/PmRisks'))
@@ -97,6 +99,8 @@ export default function App() {
             <Route path="pm" element={<PmProjects />} />
             <Route path="pm/dashboard" element={<Feature id="any"><PmOverview /></Feature>} />
             <Route path="pm/info" element={<PmInfo />} />
+            <Route path="pm/meetings" element={<PmMeetings />} />
+            <Route path="pm/progress" element={<PmProgress />} />
             <Route path="pm/billing" element={<PmBilling />} />
             <Route path="pm/invoices" element={<PmInvoices />} />
             <Route path="pm/updates" element={<Feature id="updates"><PmUpdates /></Feature>} />

@@ -1,4 +1,5 @@
-import type { Project, Schedule, ScheduleEvent } from '@/types'
+import type { Currency, Invoice, Project, Schedule, ScheduleEvent } from '@/types'
+import { balanceDue } from '@/lib/pm'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}` // m is 0-based
@@ -58,6 +59,7 @@ export interface AgendaItem {
   party: string
   projectId: string
   amount: number | null
+  currency: Currency
   pic: string
   schedule?: Schedule
   scheduleDate?: string // occurrence date, for the event key
@@ -76,7 +78,7 @@ const LOOKBACK = 45 // older unfinished items are ignored so a freshly entered o
 
 /** Everything that needs attention from `today` on, soonest first. */
 export function buildAgenda(
-  schedules: Schedule[], events: Record<string, ScheduleEvent>, projects: Project[], today: string, horizonDays = 60,
+  schedules: Schedule[], events: Record<string, ScheduleEvent>, projects: Project[], today: string, horizonDays = 60, invoices: Invoice[] = [],
 ): AgendaItem[] {
   const out: AgendaItem[] = []
   const from = addDays(today, -LOOKBACK), to = addDays(today, horizonDays)
@@ -91,7 +93,7 @@ export function buildAgenda(
       const key = eventKey(s.id, date)
       const ev = events[key]
       if (ev?.skipped) continue
-      const base = { key, projectId: s.projectId, pic: s.pic, party: s.party, title: s.title, schedule: s, scheduleDate: date, event: ev }
+      const base = { key, projectId: s.projectId, pic: s.pic, party: s.party, title: s.title, schedule: s, scheduleDate: date, event: ev, currency: s.currency ?? 'IDR' }
       if (s.kind === 'payable') {
         if (ev?.paidAt || date < from) continue
         out.push({ ...base, kind: 'pay', date, amount: s.amount, ...stateOf(date, s.leadDays) })
@@ -101,7 +103,8 @@ export function buildAgenda(
       } else if (!ev.paidAt) {
         const due = addDays(ev.issuedAt, s.termDays)
         if (due < from) continue
-        out.push({ ...base, kind: 'collect', date: due, amount: s.amount, ...stateOf(due, 3) })
+        const inv = ev.invoiceId ? invoices.find((i) => i.id === ev.invoiceId) : undefined
+        out.push({ ...base, kind: 'collect', date: due, amount: inv ? balanceDue(inv) : s.amount, ...stateOf(due, 3) })
       }
     }
   }
@@ -111,7 +114,7 @@ export function buildAgenda(
     const info = p.info
     for (const [kind, date, label] of [['project_start', info.startDate, 'Project starts'], ['project_end', info.endDate, 'Project ends']] as const) {
       if (!date || date < today || date > addDays(today, 30)) continue
-      out.push({ key: `${p.id}:${kind}`, kind, date, title: label, party: info.client, projectId: p.id, amount: null, pic: info.manager, ...stateOf(date, 7) })
+      out.push({ key: `${p.id}:${kind}`, kind, date, title: label, party: info.client, projectId: p.id, amount: null, currency: 'IDR', pic: info.manager, ...stateOf(date, 7) })
     }
   }
   return out.sort((a, b) => a.date.localeCompare(b.date))

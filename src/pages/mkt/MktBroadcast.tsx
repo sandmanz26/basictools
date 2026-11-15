@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { nanoid } from 'nanoid'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, Eye, Info, Pause, Play, RotateCcw, Search, Send, Trash2, TriangleAlert, UserRound } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, Eye, Info, Paperclip, Pause, Play, RotateCcw, Search, Send, Trash2, TriangleAlert, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -11,14 +11,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { NativeSelect } from '@/components/NativeSelect'
 import { NumberInput, formatNumber } from '@/components/NumberInput'
+import { AttachmentPicker } from '@/components/AttachmentPicker'
 import { Card, Empty, Field, PageHeader, pageCls, Progress } from '@/components/pm/ui'
 import { useCan, useCurrentUser, useStore } from '@/store'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { MERGE_FIELDS, merge, sendMail } from '@/lib/microsoft'
 import { DAILY_LIMIT, FOOTER, GAP_MS, counts, daysNeeded, inWindow, pauseBroadcast, runBroadcast, useRunningId } from '@/lib/broadcast'
 import { stageDot } from '@/lib/constants'
+import { loadAttachments, removeAttachment, saveAttachments } from '@/lib/attachments'
 import { cn } from '@/lib/utils'
-import type { Broadcast, Lead } from '@/types'
+import type { AttachmentMeta, Broadcast, Lead } from '@/types'
 
 const PAGE = 50
 const fmtDur = (s: number) => (s < 90 ? `${Math.round(s)} sec` : s < 5400 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} hours`)
@@ -68,6 +70,7 @@ export default function MktBroadcast() {
   const [previewAt, setPreviewAt] = useState(0)
   const [testMsg, setTestMsg] = useState('')
   const [testOk, setTestOk] = useState(false)
+  const [atts, setAtts] = useState<AttachmentMeta[]>([])
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   // delivery plan
   const [cap, setCap] = useState<number | null>(400)
@@ -149,19 +152,24 @@ export default function MktBroadcast() {
     if (!ms.account || !first) return
     setTestMsg('Sending…')
     try {
-      await sendMail(msConfig, ms.account.username, `[TEST] ${merge(subject, first)}`, merge(body, first) + (footer ? FOOTER : ''))
+      const files = await loadAttachments(atts)
+      await sendMail(msConfig, ms.account.username, `[TEST] ${merge(subject, first)}`, merge(body, first) + (footer ? FOOTER : ''), files)
       setTestMsg(`Test sent to ${ms.account.username}. Check how it looks in your inbox.`); setTestOk(true)
     } catch (e) { setTestMsg(e instanceof Error ? e.message : 'Could not send the test'); setTestOk(false) }
   }
+
+  const removeBroadcast = (b: Broadcast) => { deleteBroadcast(b.id); b.attachments?.forEach((a) => void removeAttachment(a)) }
 
   const start = () => {
     const b: Broadcast = {
       id: 'bc-' + nanoid(6), name: name.trim() || `Broadcast ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`,
       subject, body, footer, audience: filterLabel, recipients: Object.fromEntries(recipients.map((l) => [l.id, 'pending' as const])),
       status: 'paused', createdAt: new Date().toISOString(), finishedAt: '', createdBy: user.name,
+      attachments: atts.length ? atts : undefined,
       dailyCap: cap && cap > 0 ? cap : undefined, windowStart: useWindow ? wStart : undefined, windowEnd: useWindow ? wEnd : undefined,
     }
     addBroadcast(b)
+    setAtts([]) // now owned by the broadcast
     setTab('history')
     void runBroadcast(b.id)
   }
@@ -171,7 +179,7 @@ export default function MktBroadcast() {
     { ok: !!subject.trim(), label: 'Subject written' },
     { ok: body.trim().length > 20, label: 'Message written' },
     { ok: footer, label: 'Unsubscribe line included', soft: true },
-    { ok: testOk, label: 'Test email sent to you', soft: true },
+    { ok: testOk, label: atts.length ? `Test email sent to you (with ${atts.length} file${atts.length > 1 ? 's' : ''})` : 'Test email sent to you', soft: true },
     { ok: !bigWithoutCap && !aggressive, label: 'Pace is safe for this list size', soft: true },
   ]
   const canStart = canSend && !blocked && !busy && !overLimit && recipients.length > 0 && !!subject.trim() && !!body.trim()
@@ -270,6 +278,11 @@ export default function MktBroadcast() {
                       {MERGE_FIELDS.map((f) => <button key={f} type="button" onClick={() => insert(f)} className="rounded bg-muted px-1.5 py-0.5 font-mono hover:bg-muted/70">{`{{${f}}}`}</button>)}
                       <span className="ml-auto tabular-nums">{body.length} characters</span>
                     </div>
+                    <AttachmentPicker
+                      items={atts}
+                      onAdd={async (files) => { const m = await saveAttachments(files); setAtts((a) => [...a, ...m]); setTestOk(false) }}
+                      onRemove={(aid) => { const m = atts.find((x) => x.id === aid); if (m) void removeAttachment(m); setAtts((a) => a.filter((x) => x.id !== aid)); setTestOk(false) }}
+                    />
                     <label className="flex items-center gap-2 text-sm"><Switch checked={footer} onCheckedChange={setFooter} /> Add an unsubscribe line at the bottom</label>
                     {first && (subject || body) && (
                       <div className="rounded-lg border bg-muted/30 p-3 text-sm">
@@ -376,6 +389,7 @@ export default function MktBroadcast() {
                         </span>
                       </div>
                       <div className="truncate text-sm text-muted-foreground">{b.subject}</div>
+                      {!!b.attachments?.length && <div className="flex items-center gap-1 text-xs text-muted-foreground"><Paperclip className="size-3" /> {b.attachments.map((a) => a.name).join(', ')}</div>}
                       <div className="text-xs text-muted-foreground">{b.audience} · by {b.createdBy} · {when(b.createdAt)}</div>
                     </div>
                     <div className="flex gap-1.5">
@@ -386,7 +400,7 @@ export default function MktBroadcast() {
                           {c.failed ? <RotateCcw /> : <Play />} {c.sent === 0 && c.failed === 0 ? 'Start' : c.pending === 0 ? `Retry ${formatNumber(c.failed)} failed` : `Resume (${formatNumber(remaining)} left)`}
                         </Button>
                       )}
-                      {!live && canSend && <Button size="icon-sm" variant="ghost" title="Delete from history" onClick={() => confirm(`Remove “${b.name}” from history? Sent emails stay in your Sent Items.`) && deleteBroadcast(b.id)}><Trash2 className="text-destructive" /></Button>}
+                      {!live && canSend && <Button size="icon-sm" variant="ghost" title="Delete from history" onClick={() => confirm(`Remove “${b.name}” from history? Sent emails stay in your Sent Items.`) && removeBroadcast(b)}><Trash2 className="text-destructive" /></Button>}
                     </div>
                   </div>
                   <div className="mt-3 space-y-1.5">

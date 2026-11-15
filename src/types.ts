@@ -124,6 +124,46 @@ export interface Project {
   info: ProjectInfo
   pmFeatures: Record<PmFeature, boolean> // optional PM tools, off by default
   pmFields?: Record<PmField, boolean> // which project-info fields this project uses; missing = all
+  files?: FileRef[] // NDA, agreement, SOW and other documents (links into SharePoint or any URL)
+}
+
+// ---------- Files (SharePoint / links) ----------
+
+export type FileCategory = 'nda' | 'agreement' | 'sow' | 'invoice' | 'tax' | 'other'
+
+/** A document that lives elsewhere (SharePoint/OneDrive or any link). Only the link and name are stored here. */
+export interface FileRef {
+  id: string
+  name: string
+  url: string
+  category: FileCategory
+  size?: number
+  source: 'sharepoint' | 'link'
+  addedAt: string // ISO
+  addedBy: string
+}
+
+// ---------- Project meetings ----------
+
+export type ProjectMeetingStatus = 'planned' | 'held' | 'cancelled'
+
+/** One meeting in a project's history: when, who came, what was discussed and decided. */
+export interface ProjectMeeting {
+  id: string
+  projectId: string
+  title: string
+  date: string // yyyy-mm-dd (local)
+  startTime: string // HH:mm, '' when unknown
+  endTime: string
+  attendees: string[] // names or emails
+  summary: string // short discussion notes
+  decisions: string // decisions and next steps
+  location: string
+  joinUrl: string
+  outlookId: string // Outlook calendar event id when linked, else ''
+  status: ProjectMeetingStatus
+  createdBy: string
+  createdAt: string // ISO
 }
 
 export type Permission =
@@ -188,7 +228,7 @@ export interface StatusDef {
   color: string // key of STAGE_COLORS
   attention: boolean // counts as "needs attention" on the project list
 }
-export type Phase = 'initiation' | 'planning' | 'execution' | 'monitoring' | 'closing'
+export type Phase = 'planning' | 'ongoing' | 'completed'
 export type Priority = 'low' | 'medium' | 'high' | 'critical'
 
 export interface Stakeholder {
@@ -348,11 +388,27 @@ export interface SentEmail {
   status: 'sent' | 'failed'
   error: string
   broadcastId?: string // set when sent as part of a broadcast (for daily caps)
+  attachments?: string[] // file names that went with the email
+}
+
+/** A file attached to an email or broadcast. The bytes live in IndexedDB (lib/files.ts) under `att-<id>`. */
+export interface AttachmentMeta {
+  id: string
+  name: string
+  size: number
+  type: string // MIME type
 }
 
 export interface MsConfig {
   clientId: string
   tenant: string // 'common' | 'organizations' | tenant id
+  sharepoint?: SharePointConfig
+}
+
+/** Where documents are uploaded: a SharePoint site (or the user's OneDrive when siteUrl is empty). */
+export interface SharePointConfig {
+  siteUrl: string // e.g. https://contoso.sharepoint.com/sites/Projects, '' = OneDrive of the signed-in user
+  folder: string // root folder inside the document library, e.g. HireFlow
 }
 
 export type PmField =
@@ -386,19 +442,49 @@ export interface Invoice {
   sentAt: string // ISO, '' until sent
   scheduleKey?: string // set when a recurring schedule generated this invoice (`${scheduleId}:${date}`)
   period?: string // e.g. "November 2026" for recurring invoices
+  currency?: Currency // missing = IDR
+  bankId?: string // which of our bank accounts the client pays into (BillingProfile.banks)
+  payments?: Payment[] // money received; may be partial, late, or short because of withholding tax
+  attachments?: FileRef[] // signed copy, tax slip (bukti potong), PO …
 }
 
-/** Company details printed on the invoice PDF. */
+export type Currency = 'IDR' | 'USD' | 'JPY'
+
+/** One receipt of money against an invoice. Clients often pay late and less than the total because they withhold PPh. */
+export interface Payment {
+  id: string
+  date: string // yyyy-mm-dd the money arrived
+  amount: number // what actually landed in the bank
+  withheld: number // tax the client withheld and paid to the tax office (PPh), counts toward the invoice
+  note: string
+}
+
+export interface BankAccount {
+  id: string
+  bank: string // BCA, Maybank …
+  number: string
+  holder: string
+  currency: Currency
+  swift?: string // for foreign payments
+  branch?: string
+}
+
+/** Company details and defaults printed on every invoice PDF (the invoice template). */
 export interface BillingProfile {
   company: string
   address: string
   email: string
   phone: string
   taxId: string // NPWP
-  bankName: string
-  bankAccount: string
-  bankHolder: string
   paymentNote: string // default text for the notes box of new invoices
+  logo?: string // data URL, resized small (see lib/image.ts)
+  website?: string
+  banks?: BankAccount[] // accounts clients can pay into; the invoice prints the one chosen on it
+  defaultTaxPct?: number // PPN, default 11
+  defaultTermDays?: number // days a client has to pay, default 14
+  footer?: string // small print at the bottom of the PDF
+  signerName?: string
+  signerTitle?: string
 }
 
 export type BroadcastStatus = 'running' | 'paused' | 'done'
@@ -415,6 +501,7 @@ export interface Broadcast {
   createdAt: string // ISO
   finishedAt: string
   createdBy: string
+  attachments?: AttachmentMeta[] // sent with every email of this broadcast
   dailyCap?: number // max emails per calendar day for this broadcast (0/undefined = no cap)
   windowStart?: number // only send from this hour (0-23)
   windowEnd?: number // ...until this hour (1-24)
@@ -454,6 +541,10 @@ export interface Schedule {
   active: boolean
   template?: ScheduleTemplate // receivable: how the generated invoice looks
   autoDraft?: boolean // receivable: create the draft invoice by itself when the reminder window opens (default on)
+  currency?: Currency // missing = IDR
+  bankId?: string // receivable: our account the client should pay into
+  payTo?: { bank: string; account: string; holder: string } // payable: the vendor's bank details
+  attachments?: FileRef[] // contract, quotation …
 }
 
 /** Progress of one occurrence of a schedule. Keyed by `${scheduleId}:${yyyy-mm-dd}` in the store. */
@@ -463,4 +554,8 @@ export interface ScheduleEvent {
   paidAt: string // receivable: date money came in; payable: date we paid
   skipped: boolean
   invoiceId?: string // the generated invoice document, if any
+  paidAmount?: number // amount that actually arrived / was paid (may differ from the expected amount)
+  withheld?: number // receivable: tax the client withheld (PPh)
+  paidNote?: string
+  attachments?: FileRef[] // this occurrence's vendor invoice, proof of payment …
 }

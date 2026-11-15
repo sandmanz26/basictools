@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarCheck, Loader2, Mail, RefreshCw, Undo2, Video, TriangleAlert } from 'lucide-react'
+import { CalendarCheck, FolderPlus, Loader2, Mail, RefreshCw, Undo2, Video, TriangleAlert } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/NativeSelect'
 import { FollowUpDialog } from '@/components/mkt/FollowUpDialog'
 import { Card, PageHeader, pageCls } from '@/components/pm/ui'
-import { useStore } from '@/store'
+import { useCurrentUser, useStore } from '@/store'
+import { meetingFromOutlook } from '@/lib/meetings'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { friendlyMsError, listMeetings, type Meeting } from '@/lib/microsoft'
 import { cn } from '@/lib/utils'
@@ -23,6 +25,13 @@ export default function MktMeetings() {
   const leads = useStore((s) => s.leads)
   const followups = useStore((s) => s.meetingFollowups)
   const setFollowup = useStore((s) => s.setMeetingFollowup)
+  const projects = useStore((s) => s.projects)
+  const projectMeetings = useStore((s) => s.projectMeetings)
+  const addProjectMeeting = useStore((s) => s.addProjectMeeting)
+  const { user } = useCurrentUser()
+  const [attachTo, setAttachTo] = useState<Meeting | null>(null)
+  const [attachProject, setAttachProject] = useState('')
+  const linked = (id: string) => projectMeetings.find((x) => x.outlookId === id)
   const ms = useMicrosoft()
   const me = (ms.account?.username ?? '').toLowerCase()
   const myDomain = domainOf(me)
@@ -76,9 +85,11 @@ export default function MktMeetings() {
             })}
             {m.attendees.length > 6 && <span className="text-[11px] text-muted-foreground">+{m.attendees.length - 6}</span>}
           </div>
+          {linked(m.id) && <div className="text-xs text-blue-700 dark:text-blue-300">In project: {projects.find((p) => p.id === linked(m.id)?.projectId)?.name ?? '—'}</div>}
           {f && <div className="text-xs text-muted-foreground">{f.status === 'done' ? `Follow-up sent to ${f.sent ?? 0}` : 'Skipped'} · {new Date(f.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>}
         </div>
         <div className="flex gap-1.5">
+          {!linked(m.id) && <Button size="sm" variant="ghost" title="Add this meeting to a project's history" onClick={() => { setAttachTo(m); setAttachProject(projects.find((p) => p.status === 'active')?.id ?? '') }}><FolderPlus /> Attach to project</Button>}
           {kind === 'need' && (
             <>
               <Button size="sm" onClick={() => setOpen(m)}><Mail /> Write follow-up</Button>
@@ -138,6 +149,16 @@ export default function MktMeetings() {
           </>
         )}
       </div>
+      <Dialog open={!!attachTo} onOpenChange={(o) => !o && setAttachTo(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Attach to a project</DialogTitle><DialogDescription>“{attachTo?.subject}” is added to the project’s meeting history. Open the project’s Meetings page to write the notes.</DialogDescription></DialogHeader>
+          <NativeSelect className="w-full" value={attachProject} onChange={setAttachProject} options={projects.filter((p) => p.status === 'active').map((p) => ({ value: p.id, label: p.name }))} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAttachTo(null)}>Cancel</Button>
+            <Button disabled={!attachProject} onClick={() => { if (attachTo) addProjectMeeting(meetingFromOutlook(attachTo, attachProject, user.name)); setAttachTo(null) }}>Attach</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <FollowUpDialog
         meeting={open}
         myAddress={me}

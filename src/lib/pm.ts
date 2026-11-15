@@ -1,4 +1,5 @@
 import { STAGE_COLORS, today } from '@/lib/constants'
+import { curOf, fmtCompact, fmtMoney, roundCur, sumBy, type Totals } from '@/lib/money'
 import type { Invoice, StatusDef, InvoiceStatus, Phase, PmFeature, PmField, Priority, Project, ProjectInfo, Stage } from '@/types'
 
 export const DEFAULT_STATUSES = (): StatusDef[] => [
@@ -17,12 +18,14 @@ export function statusStyle(list: StatusDef[], id: string): { label: string; ton
 }
 
 export const PHASES: { value: Phase; label: string }[] = [
-  { value: 'initiation', label: 'Initiation' },
   { value: 'planning', label: 'Planning' },
-  { value: 'execution', label: 'Execution' },
-  { value: 'monitoring', label: 'Monitoring' },
-  { value: 'closing', label: 'Closing' },
+  { value: 'ongoing', label: 'On going' },
+  { value: 'completed', label: 'Completed' },
 ]
+
+/** Older data used five PMBOK phases; fold them into the three the team actually uses. */
+export const migratePhase = (p: string): Phase =>
+  p === 'ongoing' || p === 'completed' || p === 'planning' ? p : p === 'execution' || p === 'monitoring' ? 'ongoing' : p === 'closing' ? 'completed' : 'planning'
 
 export const PRIORITY: Record<Priority, { label: string; tone: string }> = {
   low: { label: 'Low', tone: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
@@ -51,14 +54,8 @@ export const riskTone = (score: number) =>
   : score >= 4 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
   : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
 
-/** Compact IDR: 1.8 M (billion), 450 jt. */
-export const money = (n: number | null | undefined) => {
-  if (n == null) return '—'
-  const a = Math.abs(n)
-  if (a >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toLocaleString('id-ID', { maximumFractionDigits: 2 })} M`
-  if (a >= 1_000_000) return `Rp ${(n / 1_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 })} jt`
-  return `Rp ${n.toLocaleString('id-ID')}`
-}
+/** Compact IDR: 1.8 M (billion), 450 jt. Other currencies show the full amount (see lib/money.ts). */
+export const money = (n: number | null | undefined) => fmtCompact(n, 'IDR')
 
 export const daysBetween = (a: string, b: string) => Math.round((new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000)
 export const todayStr = () => today()
@@ -108,9 +105,23 @@ export const fieldsOf = (p: Pick<Project, 'pmFields'>) => p.pmFields ?? FIELDS_F
 
 // ---------- invoices ----------
 
-export const invoiceSubtotal = (i: Invoice) => i.items.reduce((a, x) => a + x.qty * x.unitPrice, 0)
-export const invoiceTax = (i: Invoice) => Math.round((invoiceSubtotal(i) * (i.taxPct || 0)) / 100)
-export const invoiceTotal = (i: Invoice) => invoiceSubtotal(i) + invoiceTax(i)
+export const invoiceSubtotal = (i: Invoice) => roundCur(i.items.reduce((a, x) => a + x.qty * x.unitPrice, 0), curOf(i))
+export const invoiceTax = (i: Invoice) => roundCur((invoiceSubtotal(i) * (i.taxPct || 0)) / 100, curOf(i))
+export const invoiceTotal = (i: Invoice) => roundCur(invoiceSubtotal(i) + invoiceTax(i), curOf(i))
+
+/** Money that actually arrived in the bank. */
+export const receivedTotal = (i: Invoice) => roundCur((i.payments ?? []).reduce((a, p) => a + p.amount, 0), curOf(i))
+/** Tax the client withheld (PPh) on our behalf. It reduces what they owe, but is not cash for us. */
+export const withheldTotal = (i: Invoice) => roundCur((i.payments ?? []).reduce((a, p) => a + p.withheld, 0), curOf(i))
+/** What is still owed after payments and withholding. */
+export const balanceDue = (i: Invoice) =>
+  // Invoices marked paid before payments were tracked have no payment rows: they are simply settled.
+  !i.payments?.length && i.status === 'paid' ? 0 : Math.max(0, roundCur(invoiceTotal(i) - receivedTotal(i) - withheldTotal(i), curOf(i)))
+/** Amount counted as settled: all of it once the invoice is marked paid, otherwise what was received plus withheld. */
+export const settledAmount = (i: Invoice) => (i.status === 'paid' ? invoiceTotal(i) : roundCur(receivedTotal(i) + withheldTotal(i), curOf(i)))
+export const isPartlyPaid = (i: Invoice) => (i.payments?.length ?? 0) > 0 && balanceDue(i) > 0
+/** Last day money arrived, '' if none. */
+export const lastPaymentDate = (i: Invoice) => (i.payments ?? []).reduce((d, p) => (p.date > d ? p.date : d), '')
 
 /** A sent invoice past its due date counts as overdue. */
 export const effectiveStatus = (i: Invoice, today = todayStr()): InvoiceStatus =>
@@ -123,18 +134,23 @@ export const INVOICE_STATUS: Record<InvoiceStatus, { label: string; tone: string
   overdue: { label: 'Overdue', tone: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' },
 }
 
-/** Money still expected from the client: sent and overdue invoices. */
-export const outstanding = (list: Invoice[]) => list.filter((i) => i.status === 'sent').reduce((a, i) => a + invoiceTotal(i), 0)
+/** Money still expected from the client (sent and overdue invoices), per currency. */
+export const outstanding = (list: Invoice[]): Totals => sumBy(list.filter((i) => i.status === 'sent'), curOf, balanceDue)
+/** Total of the invoices that have left the building (not drafts), per currency. */
+export const billedTotals = (list: Invoice[]): Totals => sumBy(list.filter((i) => i.status !== 'draft'), curOf, invoiceTotal)
+/** Total settled (money received plus tax withheld) across the list, per currency. */
+export const paidTotals = (list: Invoice[]): Totals => sumBy(list, curOf, settledAmount)
 
-const fullIdr = (n: number) => 'Rp ' + n.toLocaleString('id-ID')
 const longDate = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '—')
 
 export function invoiceEmail(i: Invoice, projectName: string, sender: string): { subject: string; body: string } {
+  const cur = curOf(i)
+  const fullIdr = (n: number) => fmtMoney(n, cur)
   const lines = i.items.map((x) => `  - ${x.description} (${x.qty} x ${fullIdr(x.unitPrice)}) = ${fullIdr(x.qty * x.unitPrice)}`).join('\n')
   const tax = i.taxPct ? `\nTax (${i.taxPct}%): ${fullIdr(invoiceTax(i))}` : ''
   return {
     subject: `Invoice ${i.number} - ${projectName}`,
-    body: `Dear ${i.clientName || 'Sir/Madam'},\n\nPlease find the invoice for ${projectName} below.\n\nInvoice: ${i.number}\nIssued: ${longDate(i.issueDate)}\nDue: ${longDate(i.dueDate)}\n\n${lines}\n\nSubtotal: ${fullIdr(invoiceSubtotal(i))}${tax}\nTotal due: ${fullIdr(invoiceTotal(i))}\n${i.notes ? `\n${i.notes}\n` : ''}\nThank you,\n${sender}`,
+    body: `Dear ${i.clientName || 'Sir/Madam'},\n\nPlease find the invoice for ${projectName} below.\n\nInvoice: ${i.number}\nIssued: ${longDate(i.issueDate)}\nDue: ${longDate(i.dueDate)}\n\n${lines}\n\nSubtotal: ${fullIdr(invoiceSubtotal(i))}${tax}\nTotal due: ${fullIdr(balanceDue(i) || invoiceTotal(i))}\n${i.notes ? `\n${i.notes}\n` : ''}\nThank you,\n${sender}`,
   }
 }
 

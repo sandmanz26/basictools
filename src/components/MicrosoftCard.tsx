@@ -8,6 +8,7 @@ import { useStore } from '@/store'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { MicrosoftGuide } from '@/components/MicrosoftGuide'
 import { friendlyMsError, sendMail, testConnection } from '@/lib/microsoft'
+import { testSharePoint } from '@/lib/sharepoint'
 
 const TENANTS = [
   { value: 'common', label: 'Work, school and personal accounts' },
@@ -21,6 +22,8 @@ export function MicrosoftCard({ canEdit }: { canEdit: boolean }) {
   const ms = useMicrosoft()
   const [test, setTest] = useState<{ ok: boolean; text: string } | null>(null)
   const [testing, setTesting] = useState(false)
+  const [spBusy, setSpBusy] = useState(false)
+  const [spMsg, setSpMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const check = async (kind: 'connect' | 'mail') => {
     setTesting(true); setTest(null)
     try {
@@ -62,6 +65,20 @@ export function MicrosoftCard({ canEdit }: { canEdit: boolean }) {
               </Field>
             </div>
             <p className="text-xs text-muted-foreground">Only the client ID is stored here (it is not a secret). Sign-in tokens stay in this browser tab’s session and are never saved with your data. You can also preset the ID with <code>VITE_MS_CLIENT_ID</code> at build time.</p>
+
+            <div className="space-y-2 rounded-lg border p-3">
+              <div className="text-sm font-semibold">SharePoint documents</div>
+              <p className="text-xs text-muted-foreground">Where project files, invoices and vendor bills are uploaded. Leave the site empty to use your own OneDrive. Needs the <code>Files.ReadWrite.All</code> permission.</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="SharePoint site address"><Input disabled={!canEdit} placeholder="https://contoso.sharepoint.com/sites/Projects" value={msConfig.sharepoint?.siteUrl ?? ''} onChange={(e) => setMsConfig({ sharepoint: { siteUrl: e.target.value.trim(), folder: msConfig.sharepoint?.folder ?? 'HireFlow' } })} /></Field>
+                <Field label="Folder"><Input disabled={!canEdit} placeholder="HireFlow" value={msConfig.sharepoint?.folder ?? 'HireFlow'} onChange={(e) => setMsConfig({ sharepoint: { siteUrl: msConfig.sharepoint?.siteUrl ?? '', folder: e.target.value } })} /></Field>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button size="sm" variant="outline" disabled={!ms.account || spBusy} onClick={async () => { setSpBusy(true); setSpMsg(null); try { setSpMsg({ ok: true, text: 'Works. Files go to ' + (await testSharePoint(msConfig)) + '.' }) } catch (e) { setSpMsg({ ok: false, text: friendlyMsError(e instanceof Error ? e.message : String(e)) }) } setSpBusy(false) }}><PlugZap /> Test SharePoint</Button>
+                {!ms.account && <span className="text-xs text-muted-foreground">Connect Microsoft first.</span>}
+              </div>
+              {spMsg && <div className={spMsg.ok ? 'rounded-lg bg-emerald-50 px-3 py-2 text-sm whitespace-pre-line text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'rounded-lg bg-red-50 px-3 py-2 text-sm whitespace-pre-line text-red-700 dark:bg-red-950 dark:text-red-300'}>{spMsg.text}</div>}
+            </div>
 
             <MicrosoftGuide defaultOpen={!ms.configured} />
           </div>

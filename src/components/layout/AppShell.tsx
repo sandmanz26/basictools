@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   BriefcaseBusiness, CalendarRange, ClipboardList, FolderCog, FolderKanban, Gauge, Info, LayoutGrid, Link2, LogOut,
-  BellRing, CalendarCheck, Crown, FlaskConical, Lock, TriangleAlert, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
+  BellRing, CalendarCheck, CalendarClock, ChartGantt, Crown, FlaskConical, Lock, TriangleAlert, Mail, Megaphone, Receipt, Send, Settings, ShieldAlert, SlidersHorizontal, SquareKanban, UserSearch, Users, UsersRound, Wallet, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCan, useCurrentUser, useStore } from '@/store'
@@ -56,6 +56,8 @@ export const MODULES: Module[] = [
       ] },
       { label: 'Selected project', items: [
         { to: '/pm/info', label: 'Project info', icon: Info },
+        { to: '/pm/progress', label: 'Progress timeline', icon: ChartGantt },
+        { to: '/pm/meetings', label: 'Meetings', icon: CalendarClock },
         { to: '/pm/invoices', label: 'Invoices', icon: Receipt },
         { to: '/pm/dashboard', label: 'Dashboard', icon: Gauge, feature: 'any' },
         { to: '/pm/updates', label: 'Status updates', icon: Megaphone, feature: 'updates' },

@@ -1,7 +1,13 @@
-import type { BillingProfile, Invoice } from '@/types'
-import { INVOICE_STATUS, effectiveStatus, invoiceSubtotal, invoiceTax, invoiceTotal } from '@/lib/pm'
+import type { BankAccount, BillingProfile, Invoice } from '@/types'
+import { INVOICE_STATUS, balanceDue, effectiveStatus, invoiceSubtotal, invoiceTax, invoiceTotal, receivedTotal, withheldTotal } from '@/lib/pm'
+import { curOf, fmtMoney } from '@/lib/money'
+import { imageSize } from '@/lib/image'
 
-const rp = (n: number) => 'Rp ' + Math.round(n).toLocaleString('id-ID')
+/** The bank account printed on an invoice: the one chosen on it, else the first one in its currency, else the first. */
+export function bankFor(inv: Invoice, profile: BillingProfile): BankAccount | undefined {
+  const banks = profile.banks ?? []
+  return banks.find((b) => b.id === inv.bankId) ?? banks.find((b) => b.currency === curOf(inv)) ?? banks[0]
+}
 const longDate = (d: string) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' }) : '-')
 
 export const invoiceFileName = (i: Invoice, projectName: string) =>
@@ -16,24 +22,37 @@ export async function buildInvoicePdf(inv: Invoice, projectName: string, profile
   const M = 48
   const ink = [24, 24, 27] as const
   const muted = [113, 113, 122] as const
+  const rp = (n: number) => fmtMoney(n, curOf(inv))
   let y = M
 
-  // Header: company on the left, document title on the right
+  // Header: logo + company on the left, document title on the right
+  let textX = M
+  if (profile.logo) {
+    try {
+      const { w, h } = await imageSize(profile.logo)
+      if (w && h) {
+        const lh = Math.min(48, (140 * h) / w), lw = (lh * w) / h
+        doc.addImage(profile.logo, profile.logo.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', M, y - 6, lw, lh)
+        y += lh + 2 - 14
+      }
+    } catch { /* a bad logo must never block the invoice */ }
+  }
   doc.setFont('helvetica', 'bold').setFontSize(16).setTextColor(...ink)
-  doc.text(profile.company || 'Your company', M, y + 8)
+  doc.text(profile.company || 'Your company', textX, y + 22)
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...muted)
-  const from = [profile.address, [profile.email, profile.phone].filter(Boolean).join('  |  '), profile.taxId && `NPWP ${profile.taxId}`].filter(Boolean) as string[]
-  from.flatMap((l) => doc.splitTextToSize(l, 240) as string[]).forEach((l, i) => doc.text(l, M, y + 24 + i * 12))
+  const from = [profile.address, [profile.phone, profile.email, profile.website].filter(Boolean).join('  |  '), profile.taxId && `NPWP ${profile.taxId}`].filter(Boolean) as string[]
+  from.flatMap((l) => doc.splitTextToSize(l, 270) as string[]).forEach((l, i) => doc.text(l, textX, y + 38 + i * 12))
+  const top = M
 
   doc.setFont('helvetica', 'bold').setFontSize(24).setTextColor(...ink)
-  doc.text('INVOICE', W - M, y + 10, { align: 'right' })
+  doc.text('INVOICE', W - M, top + 10, { align: 'right' })
   doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...muted)
   const status = INVOICE_STATUS[effectiveStatus(inv)].label
   ;[['No.', inv.number], ['Issued', longDate(inv.issueDate)], ['Due', longDate(inv.dueDate)], ['Status', status]].forEach(([k, v], i) => {
-    doc.setTextColor(...muted).text(k, W - M - 150, y + 32 + i * 14)
-    doc.setTextColor(...ink).text(v, W - M, y + 32 + i * 14, { align: 'right' })
+    doc.setTextColor(...muted).text(k, W - M - 150, top + 32 + i * 14)
+    doc.setTextColor(...ink).text(v, W - M, top + 32 + i * 14, { align: 'right' })
   })
-  y += 110
+  y = Math.max(y + 38 + from.flatMap((l) => doc.splitTextToSize(l, 270) as string[]).length * 12, top + 100) + 16
 
   // Bill to + project
   doc.setDrawColor(228, 228, 231).line(M, y - 14, W - M, y - 14)
@@ -69,11 +88,17 @@ export async function buildInvoicePdf(inv: Invoice, projectName: string, profile
   if (inv.taxPct) row(`Tax (${inv.taxPct}%)`, rp(invoiceTax(inv)))
   doc.setDrawColor(...ink).line(W - M - 180, y - 8, W - M, y - 8)
   y += 4
-  row('Total due', rp(invoiceTotal(inv)), true)
+  row('Total', rp(invoiceTotal(inv)), true)
+  if ((inv.payments ?? []).length) {
+    row('Received', '- ' + rp(receivedTotal(inv)))
+    if (withheldTotal(inv)) row('Tax withheld (PPh)', '- ' + rp(withheldTotal(inv)))
+    row('Balance due', rp(balanceDue(inv)), true)
+  }
   y += 12
 
   // Payment details + notes
-  const bank = [profile.bankName && `Bank: ${profile.bankName}`, profile.bankAccount && `Account: ${profile.bankAccount}`, profile.bankHolder && `Account name: ${profile.bankHolder}`].filter(Boolean) as string[]
+  const acct = bankFor(inv, profile)
+  const bank = acct ? [`Bank: ${acct.bank}${acct.branch ? ' (' + acct.branch + ')' : ''}`, `Account: ${acct.number}  (${acct.currency})`, `Account name: ${acct.holder}`, acct.swift && `SWIFT: ${acct.swift}`].filter(Boolean) as string[] : []
   if (bank.length) {
     doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...muted).text('PAYMENT DETAILS', M, y)
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...ink)
@@ -83,11 +108,22 @@ export async function buildInvoicePdf(inv: Invoice, projectName: string, profile
   if (inv.notes.trim()) {
     doc.setFont('helvetica', 'bold').setFontSize(8).setTextColor(...muted).text('NOTES', M, y)
     doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...ink)
-    ;(doc.splitTextToSize(inv.notes, W - M * 2) as string[]).forEach((l, i) => doc.text(l, M, y + 14 + i * 13))
+    const lines = doc.splitTextToSize(inv.notes, W - M * 2) as string[]
+    lines.forEach((l, i) => doc.text(l, M, y + 14 + i * 13))
+    y += 14 + lines.length * 13 + 12
+  }
+  if (profile.signerName) {
+    if (y > doc.internal.pageSize.getHeight() - 150) { doc.addPage(); y = M }
+    doc.setFont('helvetica', 'normal').setFontSize(10).setTextColor(...muted).text('Sincerely,', W - M - 150, y + 6)
+    doc.setDrawColor(...ink).line(W - M - 150, y + 56, W - M, y + 56)
+    doc.setFont('helvetica', 'bold').setTextColor(...ink).text(profile.signerName, W - M - 150, y + 70)
+    if (profile.signerTitle) doc.setFont('helvetica', 'normal').setTextColor(...muted).text(profile.signerTitle, W - M - 150, y + 83)
   }
 
   doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...muted)
-  doc.text(`${inv.number} · generated ${new Date().toLocaleDateString('en-GB')}`, M, doc.internal.pageSize.getHeight() - 28)
+  const pageH = doc.internal.pageSize.getHeight()
+  if (profile.footer) (doc.splitTextToSize(profile.footer, W - M * 2) as string[]).slice(0, 2).forEach((l, i) => doc.text(l, M, pageH - 44 + i * 10))
+  doc.text(`${inv.number} · generated ${new Date().toLocaleDateString('en-GB')}`, M, pageH - 24)
 
   const blob = doc.output('blob') as Blob
   const base64 = (doc.output('datauristring') as string).split(',')[1]

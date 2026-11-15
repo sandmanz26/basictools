@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Empty, Field, HealthBadge, PageHeader, pageCls } from '@/components/pm/ui'
 import { useCan, useStore } from '@/store'
-import { PHASES, statusOptions, todayStr, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding } from '@/lib/pm'
+import { PHASES, statusOptions, todayStr, effectiveStatus, fieldsOf, billedTotals, money, outstanding } from '@/lib/pm'
+import { fmtTotals } from '@/lib/money'
+import { ProjectGantt } from '@/components/pm/ProjectGantt'
 import { fmtDate } from '@/lib/constants'
 import { ProjectPreview } from '@/components/pm/ProjectPreview'
 import { downloadCsv } from '@/lib/csv'
@@ -19,7 +21,7 @@ import { cn } from '@/lib/utils'
 const th = 'border-b bg-muted px-3 py-2 text-left text-xs font-semibold whitespace-nowrap text-muted-foreground'
 
 export default function PmProjects() {
-  const { statuses, schedules, scheduleEvents, projects, invoices, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
+  const { statuses, schedules, scheduleEvents, projects, invoices, projectMeetings, milestones, addProject, updateInfo, updateProject, deleteProject, setProject } = useStore()
   const canEdit = useCan()('pm.edit')
   const nav = useNavigate()
   const [q, setQ] = useState('')
@@ -29,6 +31,7 @@ export default function PmProjects() {
   const [client, setClient] = useState('')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
   const [preview, setPreview] = useState<string | null>(null)
+  const [view, setView] = useState<'list' | 'timeline'>('list')
   const [creating, setCreating] = useState(false)
   const [f, setF] = useState({ name: '', client: '', manager: '', startDate: '', endDate: '', budget: '' })
 
@@ -53,7 +56,7 @@ export default function PmProjects() {
         return [
           p.name, p.status, fl.health ? label(p.info.health) : '', fl.phase ? PHASES.find((x) => x.value === p.info.phase)?.label ?? '' : '', fl.client ? p.info.client : '', fl.manager ? p.info.manager : '',
           fl.startDate ? p.info.startDate : '', fl.endDate ? p.info.endDate : '', fl.budget ? p.info.budget ?? '' : '',
-          inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0), outstanding(inv), late.length, late[0]?.dueDate ?? '',
+          fmtTotals(billedTotals(inv)), fmtTotals(outstanding(inv)), late.length, late[0]?.dueDate ?? '',
         ]
       }),
     ])
@@ -89,7 +92,13 @@ export default function PmProjects() {
         <PageHeader
           title="All projects"
           desc="Monitor every project in one place: status, budget and what clients still owe."
-          actions={canEdit && <Button onClick={() => setCreating(true)}><Plus /> New project</Button>}
+          actions={<>
+            <div className="flex gap-1" role="group" aria-label="View">
+              <Button variant={view === 'list' ? 'default' : 'outline'} aria-pressed={view === 'list'} onClick={() => setView('list')}>List</Button>
+              <Button variant={view === 'timeline' ? 'default' : 'outline'} aria-pressed={view === 'timeline'} onClick={() => setView('timeline')}>Timeline</Button>
+            </div>
+            {canEdit && <Button onClick={() => setCreating(true)}><Plus /> New project</Button>}
+          </>}
         />
 
         {(toRelease.length > 0 || lateCollect > 0) && (
@@ -108,7 +117,7 @@ export default function PmProjects() {
           <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><FolderKanban className="size-4" /> Active projects</div><div className="mt-1 text-2xl font-semibold tabular-nums">{live.length}</div><div className="mt-1 text-xs text-muted-foreground">{projects.length - live.length} archived</div></Card>
           <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><ShieldAlert className="size-4" /> Need attention</div><div className={cn('mt-1 text-2xl font-semibold tabular-nums', trouble > 0 && 'text-amber-600')}>{trouble}</div><div className="mt-1 text-xs text-muted-foreground">at risk or off track</div></Card>
           <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><CircleDollarSign className="size-4" /> Total budget</div><div className="mt-1 text-2xl font-semibold tabular-nums">{money(totalBudget)}</div><div className="mt-1 text-xs text-muted-foreground">across active projects</div></Card>
-          <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><FileText className="size-4" /> Invoices outstanding</div><div className="mt-1 text-2xl font-semibold tabular-nums">{money(owed)}</div><div className={cn('mt-1 text-xs', overdueCount ? 'font-medium text-red-600' : 'text-muted-foreground')}>{overdueCount ? `${overdueCount} overdue` : 'none overdue'}</div></Card>
+          <Card><div className="flex items-center gap-2 text-xs text-muted-foreground"><FileText className="size-4" /> Invoices outstanding</div><div className="mt-1 text-xl font-semibold tabular-nums">{fmtTotals(owed, true)}</div><div className={cn('mt-1 text-xs', overdueCount ? 'font-medium text-red-600' : 'text-muted-foreground')}>{overdueCount ? `${overdueCount} overdue` : 'none overdue'}</div></Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -126,7 +135,9 @@ export default function PmProjects() {
           <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={exportRows}><Download className="size-3.5" /> Export ({rows.length})</Button>
         </div>
 
-        {rows.length === 0 ? <Empty>No projects match.</Empty> : (
+        {rows.length === 0 ? <Empty>No projects match.</Empty> : view === 'timeline' ? (
+          <ProjectGantt projects={rows} invoices={invoices} meetings={projectMeetings} milestones={milestones} statuses={statuses} onOpen={setPreview} />
+        ) : (
           <div className="overflow-x-auto rounded-xl border bg-card">
             <table className="w-full min-w-[60rem] text-sm">
               <thead><tr>
@@ -142,11 +153,11 @@ export default function PmProjects() {
                 {rows.map((p) => {
                   const inv = invoices.filter((i) => i.projectId === p.id)
                   const owedP = outstanding(inv)
+                  const billed = billedTotals(inv)
                   const lateList = inv.filter((i) => effectiveStatus(i) === 'overdue').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
                   const late = lateList.length
                   const fl = fieldsOf(p)
                   const dash = <span className="text-muted-foreground">—</span>
-                  const billed = inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0)
                   return (
                     <tr key={p.id} className="cursor-pointer border-t hover:bg-muted/30" onClick={() => open(p.id, '/pm/info')}>
                       <td className="px-3 py-2.5"><div className="font-medium">{p.name}{p.status === 'archived' && <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">archived</span>}</div>{fl.manager && <div className="text-xs text-muted-foreground">PM {p.info.manager || '—'}</div>}</td>
@@ -161,8 +172,8 @@ export default function PmProjects() {
                       {used('budget') && <td className="px-3 py-2.5 text-right tabular-nums">{fl.budget ? money(p.info.budget) : dash}</td>}
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         {inv.length === 0 ? <span className="text-muted-foreground">—</span> : (
-                          <div><div>{money(owedP)} <span className="text-xs text-muted-foreground">owed</span></div>
-                            <div className={cn('text-xs', late ? 'font-medium text-red-600' : 'text-muted-foreground')}>{late ? <span className="inline-flex items-center gap-1"><TriangleAlert className="size-3" /> {late} overdue · due {fmtDate(lateList[0].dueDate)}{late > 1 && ' (oldest)'}</span> : `${money(billed)} billed`}</div></div>
+                          <div><div>{fmtTotals(owedP, true)} <span className="text-xs text-muted-foreground">owed</span></div>
+                            <div className={cn('text-xs', late ? 'font-medium text-red-600' : 'text-muted-foreground')}>{late ? <span className="inline-flex items-center gap-1"><TriangleAlert className="size-3" /> {late} overdue · due {fmtDate(lateList[0].dueDate)}{late > 1 && ' (oldest)'}</span> : `${fmtTotals(billed, true)} billed`}</div></div>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>

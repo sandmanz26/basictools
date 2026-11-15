@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { NativeSelect } from '@/components/NativeSelect'
 import { Card, Field, HealthBadge, PageHeader, pageCls, usePm } from '@/components/pm/ui'
 import { PHASES, PRIORITY, fieldsOf, statusOptions } from '@/lib/pm'
+import { FilesCard } from '@/components/FilesCard'
 import type { ProjectInfo, Stakeholder } from '@/types'
 
 const opts = <T extends string>(o: Record<T, { label: string }>) => (Object.keys(o) as T[]).map((k) => ({ value: k, label: o[k].label }))
@@ -93,6 +94,12 @@ export default function PmInfo() {
             {info.stakeholders.length === 0 && <p className="text-sm text-muted-foreground">No stakeholders listed.</p>}
           </div>
         </Card>}
+
+        <FilesCard
+          title="Project files" files={project.files ?? []} onChange={(files) => s.updateProject(project.id, { files })}
+          categories={['nda', 'agreement', 'sow', 'other']} folder={[project.name]} canEdit={canEdit}
+          hint="NDA, agreement, SOW and anything else about this project. Stored in your SharePoint; only the links are kept here."
+        />
 
         {!ro && (
           <Card title="Archive or delete">

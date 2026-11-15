@@ -130,3 +130,21 @@ CSV parsing and export, ICS export, column preferences, drafts.
   `docker compose up` for the critical flows (login, add candidate, send invoice).
 - **Rollout**: ship behind `VITE_API_URL` in a preview deployment first, create the admin with the seed, invite users
   through the register flow, then switch production and remove demo mode.
+
+## 6. Added after the first backend: data the API does not model yet
+
+The web app now has these features. They live in the browser store only; the server schema (`server/src/db/schema.ts`) does not have them, so each needs a migration + endpoint before the SPA can switch over:
+
+| Feature | Client shape (src/types.ts) | Server work |
+| --- | --- | --- |
+| Project phase is `planning | ongoing | completed` | `ProjectInfo.phase` (old values are migrated by `migratePhase`, store v9) | Change the column/enum; map old rows the same way |
+| Currencies (IDR, USD, JPY) | `Invoice.currency`, `Schedule.currency` (missing = IDR) | Add `currency` char(3); keep money as integers in the smallest unit (USD cents) |
+| Our bank accounts + invoice template | `BillingProfile.banks[]`, `logo`, `defaultTaxPct`, `defaultTermDays`, `footer`, `signer*`; `Invoice.bankId` | New `bank_accounts` table; store the logo as a file, not a data URL |
+| Vendor bank details | `Schedule.payTo` | Columns on `schedules` |
+| Payments (partial, late, PPh withheld) | `Invoice.payments[]` (`amount`, `withheld`, `date`, `note`), `ScheduleEvent.paidAmount/withheld/paidNote` | New `invoice_payments` table; invoice status derived from payments |
+| Project files / invoice and bill documents | `Project.files`, `Invoice.attachments`, `Schedule.attachments`, `ScheduleEvent.attachments` (`FileRef`: name + SharePoint link) | New `file_refs` table (owner type + id). Only links are stored |
+| Project meetings | `ProjectMeeting` (`projectMeetings` in the store) | New `project_meetings` table, attendees as text[] or a join table |
+| Email attachments | `Broadcast.attachments` (`AttachmentMeta`), `SentEmail.attachments` (names). Bytes are in the browser's IndexedDB | Server needs object storage (e.g. Supabase Storage) and the broadcast worker must attach files when sending |
+| Sent history table | `SentEmail[]`, capped at `EMAIL_LOG_CAP` (6,000) | `sent_emails` already exists: add `attachments`, remove the cap, filter by date server-side |
+
+SharePoint upload and Outlook event creation run in the browser with the user's own Microsoft token (delegated). When the API takes over, keep them in the browser (no server-held Microsoft credentials), and only send the resulting link / event id to the API.

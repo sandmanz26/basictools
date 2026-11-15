@@ -1,3 +1,4 @@
+import { fmtMoney } from '@/lib/money'
 import type { Project, Schedule } from '@/types'
 import { repeatLabel } from '@/lib/billing'
 
@@ -36,7 +37,7 @@ export function schedulesToIcs(list: Schedule[], projects: Project[], firstOccur
     const verb = s.kind === 'receivable' ? 'Release invoice' : 'Pay bill'
     const summary = `${verb}: ${[s.party, s.title].filter(Boolean).join(' – ')}`
     const desc = [
-      project && `Project: ${project}`, s.amount != null && `Amount: Rp ${s.amount.toLocaleString('id-ID')}`, s.pic && `PIC: ${s.pic}`,
+      project && `Project: ${project}`, s.amount != null && `Amount: ${fmtMoney(s.amount, s.currency ?? 'IDR')}`, s.pic && `PIC: ${s.pic}`,
       s.frequency !== 'once' && `Repeats: ${repeatLabel(s)}`, s.kind === 'receivable' && `Client pays within ${s.termDays} days`, s.notes,
     ].filter(Boolean).join('\n')
     const next = new Date(start + 'T00:00:00')

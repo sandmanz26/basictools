@@ -6,6 +6,7 @@ import { NumberInput } from '@/components/NumberInput'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useStore } from '@/store'
 import { money, nextInvoiceNumber, todayStr } from '@/lib/pm'
+import { defaultBankId } from '@/store'
 import { addDays } from '@/lib/billing'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
@@ -64,7 +65,8 @@ export function InvoiceFromProjectDialog({
     const email = project.info.stakeholders.find((x) => x.contact.includes('@'))?.contact ?? mine.find((i) => i.clientEmail)?.clientEmail ?? ''
     const inv: Invoice = {
       id: 'inv-' + nanoid(6), projectId, number: nextInvoiceNumber(invoices, t), clientName: project.info.client, clientEmail: email,
-      issueDate: t, dueDate: addDays(t, 14), status: 'draft', taxPct: 11, notes: billingProfile.paymentNote, sentAt: '',
+      issueDate: t, dueDate: addDays(t, billingProfile.defaultTermDays ?? 14), status: 'draft', taxPct: billingProfile.defaultTaxPct ?? 11, notes: billingProfile.paymentNote, sentAt: '',
+      currency: 'IDR', bankId: defaultBankId(billingProfile.banks, 'IDR'),
       items: chosen.map((l) => ({ id: nanoid(5), description: l.description, qty: l.qty, unitPrice: l.unitPrice, ref: l.ref })),
     }
     addInvoice(inv)

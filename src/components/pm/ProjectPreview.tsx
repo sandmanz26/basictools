@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { HealthBadge, PriorityBadge, Progress } from '@/components/pm/ui'
 import { useStore } from '@/store'
-import { INVOICE_STATUS, PHASES, daysBetween, effectiveStatus, fieldsOf, invoiceTotal, money, outstanding, riskScore, riskTone, todayStr } from '@/lib/pm'
+import { INVOICE_STATUS, PHASES, daysBetween, effectiveStatus, fieldsOf, billedTotals, invoiceTotal, money, outstanding, riskScore, riskTone, todayStr } from '@/lib/pm'
+import { curOf, fmtCompact, fmtTotals } from '@/lib/money'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
@@ -27,7 +28,7 @@ export function ProjectPreview({ projectId, onClose }: { projectId: string | nul
           const today = todayStr()
           const inv = invoices.filter((i) => i.projectId === p.id)
           const overdue = inv.filter((i) => effectiveStatus(i) === 'overdue').sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-          const billed = inv.filter((i) => i.status !== 'draft').reduce((a, i) => a + invoiceTotal(i), 0)
+          const billed = billedTotals(inv)
           const done = new Set(p.pmStages.filter((x) => x.type === 'won').map((x) => x.id))
           const pt = tasks.filter((t) => t.projectId === p.id)
           const prog = pt.length ? Math.round((pt.filter((t) => done.has(t.stage)).length / pt.length) * 100) : 0
@@ -73,8 +74,8 @@ export function ProjectPreview({ projectId, onClose }: { projectId: string | nul
                   {inv.length === 0 ? <p className="text-sm text-muted-foreground">No invoices yet.</p> : (
                     <>
                       <div className="grid grid-cols-3 gap-2 text-sm">
-                        <div className="rounded-lg bg-muted/50 p-2"><div className="text-xs text-muted-foreground">Billed</div><div className="font-semibold tabular-nums">{money(billed)}</div></div>
-                        <div className="rounded-lg bg-muted/50 p-2"><div className="text-xs text-muted-foreground">Outstanding</div><div className="font-semibold tabular-nums">{money(outstanding(inv))}</div></div>
+                        <div className="rounded-lg bg-muted/50 p-2"><div className="text-xs text-muted-foreground">Billed</div><div className="font-semibold tabular-nums">{fmtTotals(billed, true)}</div></div>
+                        <div className="rounded-lg bg-muted/50 p-2"><div className="text-xs text-muted-foreground">Outstanding</div><div className="font-semibold tabular-nums">{fmtTotals(outstanding(inv), true)}</div></div>
                         <div className="rounded-lg bg-muted/50 p-2"><div className="text-xs text-muted-foreground">Overdue</div><div className={cn('font-semibold tabular-nums', overdue.length && 'text-red-600')}>{overdue.length}</div></div>
                       </div>
                       <div className="divide-y rounded-xl border text-sm">
@@ -85,7 +86,7 @@ export function ProjectPreview({ projectId, onClose }: { projectId: string | nul
                               <span className="font-medium">{i.number}</span>
                               <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-medium', st.tone)}>{st.label}</span>
                               <span className="ml-auto text-xs text-muted-foreground">due {fmtDate(i.dueDate)}</span>
-                              <span className="w-24 text-right tabular-nums">{money(invoiceTotal(i))}</span>
+                              <span className="w-28 text-right tabular-nums">{fmtCompact(invoiceTotal(i), curOf(i))}</span>
                             </div>
                           )
                         })}

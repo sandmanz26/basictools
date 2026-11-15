@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { NativeSelect } from '@/components/NativeSelect'
+import { AttachmentPicker } from '@/components/AttachmentPicker'
+import { filesToMail } from '@/lib/attachments'
 import { useCurrentUser, useStore } from '@/store'
 import { useMicrosoft } from '@/lib/useMicrosoft'
 import { MERGE_FIELDS, merge, sendMail } from '@/lib/microsoft'
@@ -27,6 +29,7 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
   const [tplId, setTplId] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  const [files, setFiles] = useState<{ id: string; file: File }[]>([]) // kept in memory only
   const [sending, setSending] = useState(false)
   const [results, setResults] = useState<Record<string, Result>>({})
   const stop = useRef(false)
@@ -34,7 +37,7 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
 
   useEffect(() => {
     if (!open) return
-    setPicked(new Set(leadIds)); setResults({}); setTplId(''); setSubject(''); setBody(''); stop.current = false
+    setPicked(new Set(leadIds)); setResults({}); setTplId(''); setSubject(''); setBody(''); setFiles([]); stop.current = false
   }, [open, leadIds])
 
   const sendable = (l: (typeof leads)[number]) => !!l.email && !l.unsubscribed
@@ -43,6 +46,7 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
   const first = chosen[0] ?? choices[0]
   const done = Object.keys(results).length
   const okCount = Object.values(results).filter((r) => r.ok).length
+  const readError = results._?.error
 
   const applyTpl = (id: string) => {
     setTplId(id)
@@ -61,13 +65,16 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
 
   const send = async () => {
     setSending(true); stop.current = false; setResults({})
+    let mailFiles: Awaited<ReturnType<typeof filesToMail>> = []
+    try { mailFiles = await filesToMail(files.map((f) => f.file)) } catch { setResults({ _: { ok: false, error: 'Could not read an attached file. Remove it and attach it again.' } }); setSending(false); return }
+    const names = files.map((f) => f.file.name)
     for (let i = 0; i < chosen.length; i++) {
       if (stop.current) break
       const l = chosen[i]
       const subj = merge(subject, l), text = merge(body, l)
       let r: Result
-      try { await sendMail(msConfig, l.email, subj, text); r = { ok: true } } catch (e) { r = { ok: false, error: e instanceof Error ? e.message : String(e) } }
-      logEmail({ id: 'em-' + nanoid(6), leadId: l.id, to: l.email, subject: subj, body: text, sentAt: new Date().toISOString(), sentBy: user.name, status: r.ok ? 'sent' : 'failed', error: r.error ?? '' })
+      try { await sendMail(msConfig, l.email, subj, text, mailFiles); r = { ok: true } } catch (e) { r = { ok: false, error: e instanceof Error ? e.message : String(e) } }
+      logEmail({ id: 'em-' + nanoid(6), leadId: l.id, to: l.email, subject: subj, body: text, sentAt: new Date().toISOString(), sentBy: user.name, status: r.ok ? 'sent' : 'failed', error: r.error ?? '', ...(names.length ? { attachments: names } : {}) })
       setResults((p) => ({ ...p, [l.id]: r }))
       if (i < chosen.length - 1 && !stop.current) await new Promise((res) => setTimeout(res, GAP_MS))
     }
@@ -131,6 +138,12 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
               Insert:
               {MERGE_FIELDS.map((f) => <button key={f} type="button" onClick={() => insert(f)} className="rounded bg-muted px-1.5 py-0.5 font-mono hover:bg-muted/70">{`{{${f}}}`}</button>)}
             </div>
+            <AttachmentPicker
+              items={files.map((f) => ({ id: f.id, name: f.file.name, size: f.file.size }))}
+              disabled={sending}
+              onAdd={(fs) => setFiles((p) => [...p, ...fs.map((file) => ({ id: nanoid(6), file }))])}
+              onRemove={(id) => setFiles((p) => p.filter((f) => f.id !== id))}
+            />
             {first && (subject || body) && (
               <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                 <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Preview for {first.name}</div>
@@ -142,7 +155,8 @@ export function ComposeDialog({ open, onClose, leadIds }: { open: boolean; onClo
         </div>
 
         {tooMany && <div className="text-sm text-red-600">Send at most {MAX_BATCH} at a time to stay within Microsoft’s rate limits.</div>}
-        {done > 0 && <div className="text-sm">{okCount} sent{done - okCount > 0 && <span className="text-red-600">, {done - okCount} failed (hover the red icon)</span>}{sending && ` · ${done}/${chosen.length}`}</div>}
+        {readError && <div className="text-sm text-red-600" role="alert">{readError}</div>}
+        {done > 0 && !readError && <div className="text-sm">{okCount} sent{done - okCount > 0 && <span className="text-red-600">, {done - okCount} failed (hover the red icon)</span>}{sending && ` · ${done}/${chosen.length}`}</div>}
 
         <DialogFooter>
           {sending ? <Button variant="outline" onClick={() => { stop.current = true }}>Stop after current</Button> : <Button variant="outline" onClick={onClose}>{done ? 'Close' : 'Cancel'}</Button>}

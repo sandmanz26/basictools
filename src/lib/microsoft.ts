@@ -7,6 +7,10 @@ export const MS_SCOPES = ['User.Read', 'Mail.Send']
 export const MS_READ_SCOPES = ['Mail.Read']
 /** Only the Meetings page asks for this (read-only calendar). */
 export const MS_CAL_SCOPES = ['Calendars.Read']
+/** Scheduling a meeting from a project creates an Outlook event (and sends the invitations). */
+export const MS_CAL_WRITE_SCOPES = ['Calendars.ReadWrite']
+/** Uploading/listing project documents in SharePoint or OneDrive. */
+export const MS_FILES_SCOPES = ['Files.ReadWrite.All']
 
 let cached: { key: string; app: PublicClientApplication } | null = null
 
@@ -45,7 +49,7 @@ export async function signOut(cfg: MsConfig) {
   if (account) await app.logoutPopup({ account, postLogoutRedirectUri: window.location.origin })
 }
 
-async function token(cfg: MsConfig, scopes: string[] = MS_SCOPES): Promise<string> {
+export async function token(cfg: MsConfig, scopes: string[] = MS_SCOPES): Promise<string> {
   const app = await getApp(cfg)
   const account = app.getActiveAccount() ?? app.getAllAccounts()[0]
   if (!account) throw new Error('Not signed in to Microsoft.')
@@ -109,7 +113,7 @@ export function friendlyMsError(raw: string): string {
     [/user_cancelled|user cancelled/i, 'Sign-in was cancelled.'],
     [/MailboxNotEnabledForRESTAPI|mailbox.*(not|inactive|soft)|ErrorInvalidUser|REST API is not yet supported/i, 'This account has no Exchange Online mailbox (no Microsoft 365 license with email), so it cannot send. Ask your admin to assign a license that includes Exchange Online.'],
     [/^401|InvalidAuthenticationToken|token.*expired/i, 'Microsoft rejected the sign-in token. Click Disconnect, then Connect Microsoft again.'],
-    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check the permission (Mail.Send to send, Mail.Read for the inbox, Calendars.Read for meetings) is added under API permissions as Delegated and approved, then Disconnect and Connect again.'],
+    [/^403|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i, 'Microsoft denied the request. Check the permission (Mail.Send to send, Mail.Read for the inbox, Calendars.Read / Calendars.ReadWrite for meetings, Files.ReadWrite.All for SharePoint documents) is added under API permissions as Delegated and approved, then Disconnect and Connect again.'],
     [/^429|throttl|TooManyRequests|ApplicationThrottled/i, 'Microsoft is rate-limiting this mailbox (about 30 messages per minute). Wait a minute and retry with a slower pace.'],
     [/Failed to fetch|NetworkError|network/i, 'Could not reach Microsoft. Check your internet connection or whether a firewall or VPN blocks graph.microsoft.com.'],
   ]
@@ -255,4 +259,55 @@ export async function listMeetings(cfg: MsConfig, fromIso: string, toIso: string
     url = data['@odata.nextLink']
   }
   return out
+}
+
+
+// ---------- Meetings (calendar, create) ----------
+
+export interface NewMeeting {
+  subject: string
+  startIso: string // UTC ISO
+  endIso: string
+  attendees: string[] // email addresses; Outlook sends them the invitation
+  body: string
+  location: string
+  online: boolean // add a Teams link
+}
+
+/** Create an Outlook event (and, with attendees, send the invitations). Needs Calendars.ReadWrite. */
+export async function createMeeting(cfg: MsConfig, m: NewMeeting): Promise<{ id: string; joinUrl: string; webLink: string }> {
+  const accessToken = await token(cfg, MS_CAL_WRITE_SCOPES)
+  const clean = (iso: string) => iso.replace(/Z$/, '').replace(/\.\d+$/, '')
+  const res = await fetch('https://graph.microsoft.com/v1.0/me/events', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subject: m.subject,
+      body: { contentType: 'HTML', content: toHtml(m.body) },
+      start: { dateTime: clean(m.startIso), timeZone: 'UTC' },
+      end: { dateTime: clean(m.endIso), timeZone: 'UTC' },
+      ...(m.location ? { location: { displayName: m.location } } : {}),
+      attendees: m.attendees.map((a) => ({ emailAddress: { address: a }, type: 'required' })),
+      ...(m.online ? { isOnlineMeeting: true, onlineMeetingProvider: 'teamsForBusiness' } : {}),
+    }),
+  })
+  if (!res.ok) {
+    let msg = ''
+    try { msg = (await res.json()).error?.message ?? '' } catch { /* ignore */ }
+    throw new Error(friendlyMsError(`${res.status} ${msg}`))
+  }
+  const ev = (await res.json()) as { id: string; webLink?: string; onlineMeeting?: { joinUrl?: string } | null }
+  return { id: ev.id, joinUrl: ev.onlineMeeting?.joinUrl ?? '', webLink: ev.webLink ?? '' }
+}
+
+/** Cancel an event you organise (attendees get a cancellation). */
+export async function cancelMeeting(cfg: MsConfig, eventId: string, comment = ''): Promise<void> {
+  const accessToken = await token(cfg, MS_CAL_WRITE_SCOPES)
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(eventId)}/cancel`, {
+    method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ comment }),
+  })
+  if (res.ok) return
+  let msg = ''
+  try { msg = (await res.json()).error?.message ?? '' } catch { /* ignore */ }
+  throw new Error(friendlyMsError(`${res.status} ${msg}`))
 }

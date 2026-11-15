@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { nanoid } from 'nanoid'
 import { Link, useNavigate } from 'react-router-dom'
-import { Bell, BellRing, CalendarPlus, CheckCheck, Download, FilePlus2, FileText, Mail, Pencil, Plus, SkipForward, Trash2, Upload, WandSparkles } from 'lucide-react'
+import { Bell, BellRing, CalendarPlus, CheckCheck, Paperclip, Download, FilePlus2, FileText, Mail, Pencil, Plus, SkipForward, Trash2, Upload, WandSparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/NumberInput'
@@ -24,18 +24,22 @@ import { downloadCsv } from '@/lib/csv'
 import { enableAlerts, alertsEnabled } from '@/lib/alerts'
 import { fmtDate } from '@/lib/constants'
 import { cn } from '@/lib/utils'
-import type { Schedule, ScheduleTemplate } from '@/types'
+import { FilesCard } from '@/components/FilesCard'
+import { currencyOptions, decimalsOf, fmtMoney, fmtTotals, sumBy } from '@/lib/money'
+import { defaultBankId } from '@/store'
+import type { Currency, Schedule, ScheduleTemplate } from '@/types'
 
-const rp = (n: number | null) => (n == null ? '' : 'Rp ' + n.toLocaleString('id-ID'))
+const rp = (n: number | null, c: Currency = 'IDR') => (n == null ? '' : fmtMoney(n, c))
 const when = (it: AgendaItem) =>
   it.daysLeft < 0 ? `${-it.daysLeft} day${it.daysLeft === -1 ? '' : 's'} overdue` : it.daysLeft === 0 ? 'Today' : it.daysLeft === 1 ? 'Tomorrow' : `in ${it.daysLeft} days`
 const stateTone = { overdue: 'text-red-600', today: 'text-amber-600', soon: 'text-amber-600', later: 'text-muted-foreground' }
 const DAY_OPTS = [{ value: '0', label: 'End of month' }, ...Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `Day ${i + 1}` }))]
 
 type Mark = { item: AgendaItem; mode: 'release' | 'paid' }
+const cur = (s: Schedule): Currency => s.currency ?? 'IDR'
 
 export default function PmBilling() {
-  const { schedules, scheduleEvents, projects, invoices, billingProfile, addSchedule, updateSchedule, deleteSchedule, setScheduleEvent, createInvoiceFromSchedule, setProject, msConfig } = useStore()
+  const { schedules, scheduleEvents, projects, invoices, billingProfile, addSchedule, updateSchedule, deleteSchedule, setScheduleEvent, createInvoiceFromSchedule, addPayment, setProject, msConfig } = useStore()
   const nav = useNavigate()
   const canEdit = useCan()('pm.invoice')
   const ms = useMicrosoft()
@@ -47,17 +51,21 @@ export default function PmBilling() {
   const [mark, setMark] = useState<Mark | null>(null)
   const [markDate, setMarkDate] = useState(today)
   const [markNo, setMarkNo] = useState('')
+  const [markAmount, setMarkAmount] = useState<number | null>(null)
+  const [markWithheld, setMarkWithheld] = useState<number | null>(null)
+  const [markNote, setMarkNote] = useState('')
+  const [filesFor, setFilesFor] = useState<AgendaItem | null>(null)
   const [importing, setImporting] = useState(false)
   const [mailMsg, setMailMsg] = useState('')
   const [alertsOn, setAlertsOn] = useState(alertsEnabled())
 
-  const agenda = useMemo(() => buildAgenda(schedules, scheduleEvents, projects, today), [schedules, scheduleEvents, projects, today])
+  const agenda = useMemo(() => buildAgenda(schedules, scheduleEvents, projects, today, 60, invoices), [schedules, scheduleEvents, projects, today, invoices])
   const urgent = needsAction(agenda)
   const pics = useMemo(() => [...new Set(schedules.map((s) => s.pic).filter(Boolean))].sort(), [schedules])
   const shown = agenda.filter((a) => (!kindFilter || a.kind === kindFilter) && (!picFilter || a.pic === picFilter))
   const projName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
 
-  const in30 = (k: AgendaItem['kind']) => agenda.filter((a) => a.kind === k && a.daysLeft <= 30).reduce((n, a) => n + (a.amount ?? 0), 0)
+  const in30 = (k: AgendaItem['kind']) => sumBy(agenda.filter((a) => a.kind === k && a.daysLeft <= 30), (a) => a.currency, (a) => a.amount ?? 0)
   const groups: { id: string; title: string; items: AgendaItem[] }[] = [
     { id: 'overdue', title: 'Overdue', items: shown.filter((a) => a.state === 'overdue') },
     { id: 'now', title: 'Today & due soon', items: shown.filter((a) => a.state === 'today' || a.state === 'soon') },
@@ -71,11 +79,16 @@ export default function PmBilling() {
     const id = createInvoiceFromSchedule(it.schedule.id, it.scheduleDate)
     if (id) goInvoice(it.schedule.projectId, id)
   }
-  const startMark = (item: AgendaItem, mode: Mark['mode']) => { setMark({ item, mode }); setMarkDate(today); setMarkNo(item.event?.invoiceNo ?? '') }
+  const startMark = (item: AgendaItem, mode: Mark['mode']) => { setMark({ item, mode }); setMarkDate(today); setMarkNo(item.event?.invoiceNo ?? ''); setMarkAmount(item.amount); setMarkWithheld(null); setMarkNote('') }
   const confirmMark = () => {
     if (!mark?.item.schedule || !mark.item.scheduleDate) return
     const key = eventKey(mark.item.schedule.id, mark.item.scheduleDate)
-    setScheduleEvent(key, mark.mode === 'release' ? { issuedAt: markDate, invoiceNo: markNo.trim() } : { paidAt: markDate })
+    const inv = mark.item.event?.invoiceId ? invoices.find((i) => i.id === mark.item.event?.invoiceId) : undefined
+    if (mark.mode === 'release') setScheduleEvent(key, { issuedAt: markDate, invoiceNo: markNo.trim() })
+    else if (inv && mark.item.kind === 'collect') {
+      // The invoice document keeps the payments; it closes (and this reminder with it) once they cover the total.
+      addPayment(inv.id, { id: nanoid(6), date: markDate, amount: markAmount ?? 0, withheld: markWithheld ?? 0, note: markNote.trim() })
+    } else setScheduleEvent(key, { paidAt: markDate, paidAmount: markAmount ?? mark.item.amount ?? 0, withheld: markWithheld ?? 0, paidNote: markNote.trim() })
     setMark(null)
   }
   const skip = (it: AgendaItem) => {
@@ -85,7 +98,7 @@ export default function PmBilling() {
   const openNew = (kind: Schedule['kind']) => {
     const p = projects.find((x) => x.status === 'active')
     setIsNew(true)
-    setEditing({ id: 'sc-' + nanoid(6), kind, projectId: '', party: '', title: '', amount: null, frequency: 'monthly', day: 0, startDate: today, endDate: '', leadDays: kind === 'receivable' ? 5 : 3, termDays: 14, pic: p?.info.manager ?? '', notes: '', active: true })
+    setEditing({ id: 'sc-' + nanoid(6), kind, projectId: '', party: '', title: '', amount: null, frequency: 'monthly', day: 0, startDate: today, endDate: '', leadDays: kind === 'receivable' ? 5 : 3, termDays: 14, pic: p?.info.manager ?? '', notes: '', active: true, currency: 'IDR', bankId: kind === 'receivable' ? defaultBankId(billingProfile.banks, 'IDR') : '' })
   }
   const pickProject = (id: string) => {
     if (!editing) return
@@ -102,7 +115,7 @@ export default function PmBilling() {
   const emailMe = async () => {
     if (!ms.account) return
     setMailMsg('Sending…')
-    const lines = urgent.map((a) => `• ${fmtDate(a.date)} (${when(a)}) — ${KIND_META[a.kind].label}: ${a.party ? a.party + ' · ' : ''}${a.title}${a.amount ? ' · ' + rp(a.amount) : ''}${a.pic ? ' · PIC ' + a.pic : ''}`)
+    const lines = urgent.map((a) => `• ${fmtDate(a.date)} (${when(a)}) — ${KIND_META[a.kind].label}: ${a.party ? a.party + ' · ' : ''}${a.title}${a.amount ? ' · ' + rp(a.amount, a.currency) : ''}${a.pic ? ' · PIC ' + a.pic : ''}`)
     try {
       await sendMail(msConfig, ms.account.username, `Billing reminders: ${urgent.length} need action`, `Hi,\n\nHere is what needs action now:\n\n${lines.join('\n') || 'Nothing is due right now.'}\n\nSent from HireFlow.`)
       setMailMsg(`Sent to ${ms.account.username}`)
@@ -126,8 +139,8 @@ export default function PmBilling() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Needs action now" value={String(urgent.length)} tone={urgent.length ? 'text-amber-600' : ''} />
           <Stat label="Overdue" value={String(agenda.filter((a) => a.state === 'overdue' && a.kind !== 'project_start' && a.kind !== 'project_end').length)} tone="text-red-600" />
-          <Stat label="To invoice, next 30 days" value={rp(in30('release')) || 'Rp 0'} />
-          <Stat label="To pay vendors, next 30 days" value={rp(in30('pay')) || 'Rp 0'} />
+          <Stat label="To invoice, next 30 days" value={fmtTotals(in30('release'))} />
+          <Stat label="To pay vendors, next 30 days" value={fmtTotals(in30('pay'))} />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
@@ -166,9 +179,9 @@ export default function PmBilling() {
                       <span className={cn('w-36 shrink-0 rounded-md px-2 py-0.5 text-center text-xs font-medium', KIND_META[it.kind].tone)}>{KIND_META[it.kind].label}</span>
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{it.party || projName(it.projectId) || '—'} <span className="font-normal text-muted-foreground">· {it.title}</span></div>
-                        <div className="truncate text-xs text-muted-foreground">{[projName(it.projectId), it.pic && `PIC ${it.pic}`, it.event?.invoiceNo && `Invoice ${it.event.invoiceNo}`, it.kind === 'release' && invoiceOf(it)?.status === 'draft' && 'Draft ready'].filter(Boolean).join(' · ')}</div>
+                        <div className="truncate text-xs text-muted-foreground">{[projName(it.projectId), it.pic && `PIC ${it.pic}`, it.event?.invoiceNo && `Invoice ${it.event.invoiceNo}`, it.kind === 'pay' && it.schedule?.payTo?.bank && `Pay to ${it.schedule.payTo.bank} ${it.schedule.payTo.account}`, it.kind === 'release' && invoiceOf(it)?.status === 'draft' && 'Draft ready'].filter(Boolean).join(' · ')}</div>
                       </div>
-                      {it.amount != null && <div className="w-32 text-right tabular-nums">{rp(it.amount)}</div>}
+                      {it.amount != null && <div className="w-36 text-right tabular-nums">{rp(it.amount, it.currency)}</div>}
                       {canEdit && it.schedule && (() => {
                         const inv = invoiceOf(it)
                         const proj = it.schedule.projectId
@@ -180,6 +193,7 @@ export default function PmBilling() {
                             {it.kind === 'release' && !proj && <span className="text-xs text-muted-foreground">Link a project to generate it</span>}
                             {it.kind === 'collect' && inv && <Button size="sm" variant="outline" onClick={() => goInvoice(proj, inv.id)}><FileText /> Invoice</Button>}
                             <Button size="sm" variant={it.kind === 'release' && proj ? 'outline' : 'default'} onClick={() => startMark(it, it.kind === 'release' ? 'release' : 'paid')}><CheckCheck /> {it.kind === 'release' ? 'Sent already' : it.kind === 'collect' ? 'Mark received' : 'Mark paid'}</Button>
+                            <Button size="icon-sm" variant="ghost" title="Files (vendor invoice, proof of payment…)" onClick={() => setFilesFor(it)}><Paperclip />{(it.event?.attachments?.length ?? 0) > 0 && <span className="text-[10px]">{it.event?.attachments?.length}</span>}</Button>
                             <Button size="icon-sm" variant="ghost" title="Skip this one" onClick={() => skip(it)}><SkipForward /></Button>
                           </div>
                         )
@@ -203,7 +217,7 @@ export default function PmBilling() {
                       <tr key={s.id} className={cn('border-t', !s.active && 'opacity-50')}>
                         <td className="px-3 py-2"><span className={cn('rounded-md px-2 py-0.5 text-xs font-medium', KIND_META[s.kind === 'receivable' ? 'release' : 'pay'].tone)}>{s.kind === 'receivable' ? 'Invoice' : 'Bill'}</span></td>
                         <td className="px-3 py-2"><div className="font-medium">{s.party || '—'}</div><div className="text-xs text-muted-foreground">{[s.title, projName(s.projectId)].filter(Boolean).join(' · ')}</div></td>
-                        <td className="px-3 py-2 tabular-nums">{rp(s.amount)}</td>
+                        <td className="px-3 py-2 tabular-nums">{rp(s.amount, cur(s))}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{repeatLabel(s)}</td>
                         <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{fmtDate(s.startDate)} → {s.endDate ? fmtDate(s.endDate) : 'open'}</td>
                         <td className="px-3 py-2 whitespace-nowrap">{fmtDate(nextOccurrence(s, today)) || '—'}</td>
@@ -234,7 +248,8 @@ export default function PmBilling() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Project (optional)</Label><NativeSelect className="w-full" value={editing.projectId} onChange={pickProject} options={[{ value: '', label: 'None' }, ...projects.filter((p) => p.status === 'active').map((p) => ({ value: p.id, label: p.name }))]} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">{editing.kind === 'receivable' ? 'Client' : 'Vendor'}</Label><Input value={editing.party} onChange={(e) => setEditing({ ...editing, party: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Title</Label><Input value={editing.title} placeholder={editing.kind === 'receivable' ? 'e.g. Monthly service fee' : 'e.g. Subscription'} onChange={(e) => setEditing({ ...editing, title: e.target.value })} /></div>
-                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Amount (Rp)</Label><NumberInput value={editing.amount} onValueChange={(v) => setEditing({ ...editing, amount: v })} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Currency</Label><NativeSelect className="w-full" value={cur(editing)} onChange={(v) => setEditing({ ...editing, currency: v as Currency, bankId: editing.kind === 'receivable' ? defaultBankId(billingProfile.banks, v as Currency) : editing.bankId })} options={currencyOptions} /></div>
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Amount</Label><NumberInput decimals={decimalsOf(cur(editing))} value={editing.amount} onValueChange={(v) => setEditing({ ...editing, amount: v })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">PIC</Label><Input value={editing.pic} onChange={(e) => setEditing({ ...editing, pic: e.target.value })} /></div>
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Repeats</Label><NativeSelect className="w-full" value={editing.frequency} onChange={(v) => setEditing({ ...editing, frequency: v as Schedule['frequency'] })} options={[{ value: 'weekly', label: 'Every week' }, { value: 'biweekly', label: 'Every 2 weeks' }, { value: 'monthly', label: 'Every month' }, { value: 'quarterly', label: 'Every 3 months' }, { value: 'yearly', label: 'Every year' }, { value: 'once', label: 'One time' }]} /></div>
                   {(editing.frequency === 'weekly' || editing.frequency === 'biweekly') && <div className="space-y-1"><Label className="text-xs text-muted-foreground">On</Label><NativeSelect className="w-full" value={String(weekdayOf(editing))} onChange={(v) => setEditing({ ...editing, weekday: Number(v) })} options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))} /></div>}
@@ -244,6 +259,20 @@ export default function PmBilling() {
                   <div className="space-y-1"><Label className="text-xs text-muted-foreground">Remind me (days before)</Label><NumberInput min={0} value={editing.leadDays} onValueChange={(v) => setEditing({ ...editing, leadDays: Math.max(0, v ?? 0) })} /></div>
                   {editing.kind === 'receivable' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays within (days)</Label><NumberInput min={0} value={editing.termDays} onValueChange={(v) => setEditing({ ...editing, termDays: Math.max(0, v ?? 0) })} /></div>}
                 </div>
+                {editing.kind === 'receivable' ? (
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">Client pays into</Label>
+                    <NativeSelect className="w-full" value={editing.bankId ?? ''} onChange={(v) => setEditing({ ...editing, bankId: v })} options={(billingProfile.banks ?? []).length ? (billingProfile.banks ?? []).map((b) => ({ value: b.id, label: `${b.bank} ${b.number} (${b.currency})` })) : [{ value: '', label: 'No bank account yet' }]} />
+                    {!(billingProfile.banks ?? []).length && <p className="text-xs text-muted-foreground">Add your accounts in <Link to="/pm/settings" className="underline">PM settings → Invoice template</Link>.</p>}</div>
+                ) : (
+                  <div className="space-y-2 rounded-lg border p-3">
+                    <div className="text-sm font-semibold">Pay the vendor to</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1"><Label className="text-xs text-muted-foreground">Bank</Label><Input placeholder="e.g. BCA, Mizuho" value={editing.payTo?.bank ?? ''} onChange={(e) => setEditing({ ...editing, payTo: { bank: e.target.value, account: editing.payTo?.account ?? '', holder: editing.payTo?.holder ?? '' } })} /></div>
+                      <div className="space-y-1"><Label className="text-xs text-muted-foreground">Account number</Label><Input value={editing.payTo?.account ?? ''} onChange={(e) => setEditing({ ...editing, payTo: { bank: editing.payTo?.bank ?? '', account: e.target.value, holder: editing.payTo?.holder ?? '' } })} /></div>
+                      <div className="col-span-2 space-y-1"><Label className="text-xs text-muted-foreground">Account name</Label><Input value={editing.payTo?.holder ?? ''} onChange={(e) => setEditing({ ...editing, payTo: { bank: editing.payTo?.bank ?? '', account: editing.payTo?.account ?? '', holder: e.target.value } })} /></div>
+                    </div>
+                  </div>
+                )}
                 {editing.kind === 'receivable' && (() => {
                   const tpl: ScheduleTemplate = editing.template ?? { items: [], taxPct: 11, clientEmail: '', notes: '' }
                   const setTpl = (p: Partial<ScheduleTemplate>) => setEditing({ ...editing, template: { ...tpl, ...p } })
@@ -279,6 +308,7 @@ export default function PmBilling() {
                     </div>
                   )
                 })()}
+                <FilesCard title="Documents" files={editing.attachments ?? []} onChange={(f) => setEditing({ ...editing, attachments: f })} categories={['agreement', 'invoice', 'other']} folder={['Billing', editing.party || editing.title || 'General']} canEdit hint="Contract, quotation or anything that applies to every occurrence. Each month's own invoice goes on the reminder (paperclip)." />
                 <div className="space-y-1"><Label className="text-xs text-muted-foreground">Notes</Label><Textarea rows={3} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></div>
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
                   <div className="mb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Next dates</div>
@@ -303,6 +333,16 @@ export default function PmBilling() {
           <div className="space-y-3">
             <div className="space-y-1"><Label className="text-xs text-muted-foreground">Date</Label><Input type="date" value={markDate} onChange={(e) => setMarkDate(e.target.value)} /></div>
             {mark?.mode === 'release' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Invoice number (optional)</Label><Input value={markNo} onChange={(e) => setMarkNo(e.target.value)} /></div>}
+            {mark?.mode === 'paid' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-xs text-muted-foreground">{mark.item.kind === 'pay' ? 'Amount paid' : 'Amount received'} ({mark.item.currency})</Label><NumberInput min={0} decimals={decimalsOf(mark.item.currency)} value={markAmount} onValueChange={setMarkAmount} /></div>
+                  {mark.item.kind === 'collect' && <div className="space-y-1"><Label className="text-xs text-muted-foreground">Tax withheld (PPh)</Label><NumberInput min={0} decimals={decimalsOf(mark.item.currency)} value={markWithheld} onValueChange={setMarkWithheld} /></div>}
+                </div>
+                <div className="space-y-1"><Label className="text-xs text-muted-foreground">Note (optional)</Label><Input value={markNote} placeholder={mark.item.kind === 'collect' ? 'e.g. paid 2 weeks late, PPh 23 withheld' : 'e.g. transferred from BCA'} onChange={(e) => setMarkNote(e.target.value)} /></div>
+                {mark.item.kind === 'collect' && mark.item.amount != null && ((markAmount ?? 0) + (markWithheld ?? 0)) < mark.item.amount && <p className="text-xs text-amber-700 dark:text-amber-400">Less than the {rp(mark.item.amount, mark.item.currency)} expected. {mark.item.event?.invoiceId ? 'The invoice stays open for the rest.' : 'It will be closed anyway; use an invoice to track partial payments.'}</p>}
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMark(null)}>Cancel</Button>
@@ -312,6 +352,17 @@ export default function PmBilling() {
       </Dialog>
 
       <BillingImportDialog open={importing} onOpenChange={setImporting} />
+
+      <Dialog open={!!filesFor} onOpenChange={(o) => !o && setFilesFor(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Files · {filesFor?.party || filesFor?.title}</DialogTitle><DialogDescription>{filesFor && `${filesFor.title} · ${fmtDate(filesFor.date)}`}. For example the vendor’s invoice or your proof of payment.</DialogDescription></DialogHeader>
+          {filesFor?.schedule && filesFor.scheduleDate && (() => {
+            const key = eventKey(filesFor.schedule.id, filesFor.scheduleDate)
+            const files = scheduleEvents[key]?.attachments ?? []
+            return <FilesCard bare files={files} onChange={(f) => setScheduleEvent(key, { attachments: f })} categories={['invoice', 'tax', 'other']} folder={['Billing', filesFor.party || filesFor.title || 'General', filesFor.scheduleDate]} canEdit={canEdit} />
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
