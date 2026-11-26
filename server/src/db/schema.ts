@@ -413,6 +413,10 @@ export const invoices = pgTable(
     /** `${scheduleId}:${yyyy-mm-dd}` when a recurring schedule generated this invoice. */
     scheduleKey: varchar('schedule_key', { length: 80 }),
     period: varchar('period', { length: 80 }).notNull().default(''),
+    /** ISO 4217 code. Money columns hold the smallest unit (IDR rupiah, USD cents). */
+    currency: varchar('currency', { length: 3 }).notNull().default('IDR'),
+    /** Which of our bank accounts the client pays into. */
+    bankId: uuid('bank_id').references((): AnyPgColumn => bankAccounts.id, { onDelete: 'set null' }),
     ...timestamps(),
   },
   (t) => [
@@ -453,6 +457,13 @@ export const billingProfile = pgTable(
     bankAccount: varchar('bank_account', { length: 60 }).notNull().default(''),
     bankHolder: varchar('bank_holder', { length: 200 }).notNull().default(''),
     paymentNote: text('payment_note').notNull().default(''),
+    /** Logo is a file in object storage; only its path is stored here. */
+    logoPath: varchar('logo_path', { length: 500 }).notNull().default(''),
+    defaultTaxPct: numeric('default_tax_pct', { mode: 'number' }).notNull().default(11),
+    defaultTermDays: integer('default_term_days').notNull().default(14),
+    footer: text('footer').notNull().default(''),
+    signerName: varchar('signer_name', { length: 200 }).notNull().default(''),
+    signerTitle: varchar('signer_title', { length: 200 }).notNull().default(''),
     ...timestamps(),
   },
   (t) => [check('billing_profile_singleton', sql`${t.id} = 1`)],
@@ -480,6 +491,9 @@ export const schedules = pgTable(
     active: boolean('active').notNull().default(true),
     template: jsonb('template').$type<ScheduleTemplate>(),
     autoDraft: boolean('auto_draft').notNull().default(true),
+    currency: varchar('currency', { length: 3 }).notNull().default('IDR'),
+    /** Vendor bank details for payables: { bank, number, holder, swift? }. */
+    payTo: jsonb('pay_to').$type<Record<string, string>>(),
     ...timestamps(),
   },
   (t) => [
@@ -501,6 +515,9 @@ export const scheduleEvents = pgTable(
     invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'set null' }),
     /** True when the invoice was deleted on purpose, so it is not auto-drafted again. */
     invoiceDeleted: boolean('invoice_deleted').notNull().default(false),
+    paidAmount: idr('paid_amount'),
+    withheld: idr('withheld'),
+    paidNote: text('paid_note').notNull().default(''),
     ...timestamps(),
   },
   (t) => [primaryKey({ columns: [t.scheduleId, t.occurrenceDate] }), index('schedule_events_invoice_idx').on(t.invoiceId)],
@@ -580,6 +597,8 @@ export const broadcasts = pgTable(
     dailyCap: integer('daily_cap'),
     windowStart: integer('window_start'),
     windowEnd: integer('window_end'),
+    /** [{ path, name, size, type }] files in object storage, attached to every message. */
+    attachments: jsonb('attachments').$type<Array<{ path: string; name: string; size: number; type: string }>>().notNull().default([]),
     pausedReason: text('paused_reason').notNull().default(''),
     /** A paused broadcast continues by itself from this moment. */
     resumeAt: isoTimestamp('resume_at'),
@@ -642,8 +661,98 @@ export const sentEmails = pgTable(
     error: text('error').notNull().default(''),
     sentBy: uuid('sent_by').references(() => users.id, { onDelete: 'set null' }),
     providerMessageId: varchar('provider_message_id', { length: 300 }),
+    attachments: jsonb('attachments').$type<string[]>().notNull().default([]),
     sentAt: isoTimestamp('sent_at').notNull().default(sql`now()`),
     createdAt: createdAt(),
   },
   (t) => [index('sent_emails_lead_idx').on(t.leadId, t.sentAt)],
+)
+
+// ---------- Added for client feedback round 2 (currencies, banks, payments, files, meetings) ----------
+export const fileOwner = pgEnum('file_owner', ['project', 'invoice', 'schedule', 'schedule_event'])
+export const meetingStatus = pgEnum('meeting_status', ['planned', 'held', 'cancelled'])
+
+/** Our own bank accounts. An invoice prints the one chosen on it. */
+export const bankAccounts = pgTable('bank_accounts', {
+  id: id(),
+  bank: varchar('bank', { length: 120 }).notNull(),
+  number: varchar('number', { length: 60 }).notNull(),
+  holder: varchar('holder', { length: 200 }).notNull().default(''),
+  currency: varchar('currency', { length: 3 }).notNull().default('IDR'),
+  swift: varchar('swift', { length: 20 }).notNull().default(''),
+  branch: varchar('branch', { length: 200 }).notNull().default(''),
+  ...timestamps(),
+})
+
+/** Money received for an invoice. May be partial, late, or short because the client withheld tax (PPh). */
+export const invoicePayments = pgTable(
+  'invoice_payments',
+  {
+    id: id(),
+    invoiceId: uuid('invoice_id').notNull().references(() => invoices.id, { onDelete: 'cascade' }),
+    paidOn: date('paid_on', { mode: 'string' }).notNull(),
+    /** What landed in the bank. */
+    amount: idr('amount').notNull().default(0),
+    /** Tax withheld by the client and paid to the tax office. Counts toward the invoice. */
+    withheld: idr('withheld').notNull().default(0),
+    note: text('note').notNull().default(''),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps(),
+  },
+  (t) => [index('invoice_payments_invoice_idx').on(t.invoiceId), check('invoice_payments_nonneg', sql`${t.amount} >= 0 and ${t.withheld} >= 0`)],
+)
+
+/** Links to documents (SharePoint or any URL). Only the link is stored, never the file. */
+export const fileRefs = pgTable(
+  'file_refs',
+  {
+    id: id(),
+    ownerType: fileOwner('owner_type').notNull(),
+    /** Id of the project / invoice / schedule, or "<scheduleId>:<yyyy-mm-dd>" for a schedule event. */
+    ownerId: varchar('owner_id', { length: 80 }).notNull(),
+    name: varchar('name', { length: 300 }).notNull(),
+    url: text('url').notNull(),
+    category: varchar('category', { length: 40 }).notNull().default('other'),
+    size: bigint('size', { mode: 'number' }),
+    source: varchar('source', { length: 20 }).notNull().default('link'),
+    addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps(),
+  },
+  (t) => [index('file_refs_owner_idx').on(t.ownerType, t.ownerId)],
+)
+
+export const projectMeetings = pgTable(
+  'project_meetings',
+  {
+    id: id(),
+    projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 300 }).notNull(),
+    date: date('date', { mode: 'string' }).notNull(),
+    startTime: varchar('start_time', { length: 5 }).notNull().default(''),
+    endTime: varchar('end_time', { length: 5 }).notNull().default(''),
+    attendees: jsonb('attendees').$type<string[]>().notNull().default([]),
+    summary: text('summary').notNull().default(''),
+    decisions: text('decisions').notNull().default(''),
+    location: varchar('location', { length: 300 }).notNull().default(''),
+    joinUrl: text('join_url').notNull().default(''),
+    /** Outlook calendar event id when linked. The event itself stays in Outlook. */
+    outlookId: varchar('outlook_id', { length: 300 }).notNull().default(''),
+    status: meetingStatus('status').notNull().default('planned'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps(),
+  },
+  (t) => [index('project_meetings_project_idx').on(t.projectId, t.date)],
+)
+
+/** Follow-up state of an Outlook meeting (done / skipped), per user. */
+export const meetingFollowups = pgTable(
+  'meeting_followups',
+  {
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    outlookId: varchar('outlook_id', { length: 300 }).notNull(),
+    status: varchar('status', { length: 10 }).notNull(),
+    sentCount: integer('sent_count').notNull().default(0),
+    at: isoTimestamp('at').notNull().default(sql`now()`),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.outlookId] })],
 )

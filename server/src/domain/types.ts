@@ -54,7 +54,7 @@ export interface Stakeholder {
 export interface ProjectInfo {
   /** Id of a project status; see StatusDef. */
   health: string
-  phase: 'initiation' | 'planning' | 'execution' | 'monitoring' | 'closing'
+  phase: 'planning' | 'ongoing' | 'completed'
   methodology: 'Agile' | 'Waterfall' | 'Hybrid'
   priority: 'low' | 'medium' | 'high' | 'critical'
   sponsor: string

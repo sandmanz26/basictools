@@ -6,7 +6,7 @@ const dateOrEmpty = z.union([z.literal(''), z.iso.date()])
 
 export const projectInfoSchema = z.object({
   health: z.string().min(1).max(60),
-  phase: z.enum(['initiation', 'planning', 'execution', 'monitoring', 'closing']),
+  phase: z.enum(['planning', 'ongoing', 'completed']),
   methodology: z.enum(['Agile', 'Waterfall', 'Hybrid']),
   priority: z.enum(['low', 'medium', 'high', 'critical']),
   sponsor: z.string().max(200),

@@ -1,5 +1,7 @@
 # Setting up HireFlow on Supabase
 
+> Click-by-click version for first-time setup: [`../docs/SETUP_SUPABASE.md`](../docs/SETUP_SUPABASE.md).
+
 HireFlow's API (`server/`) uses Supabase **only as a managed PostgreSQL database**. Login, roles and permissions are done by the API itself, so we do **not** use Supabase Auth or the auto-generated REST API. The SQL here makes sure of that: the public "anon" key can read nothing.
 
 ```
@@ -27,7 +29,7 @@ Either way, finish with the lockdown script:
 1. New query → paste [`01_api_role_and_lockdown.sql`](01_api_role_and_lockdown.sql). **Replace `CHANGE_ME_LONG_RANDOM_PASSWORD`** (generate one with `openssl rand -base64 32`) and **Run**. It turns on Row Level Security everywhere and creates the `hireflow_api` role the server will use.
 2. Verify: `select tablename, rowsecurity from pg_tables where schemaname = 'public' order by 1;` — every row must say `true`. Dashboard → **Advisors → Security** should show no "RLS disabled" warnings.
 
-The schema creates 31 tables plus enum types (migrations 0000 and 0001). The lockdown script enables RLS on every table in `public`, so tables added later by new migrations are covered if you re-run it after migrating.
+The schema creates 36 tables plus enum types (migrations 0000–0002). The lockdown script enables RLS on every table in `public`, so tables added later by new migrations are covered if you re-run it after migrating.
 
 ## 2. Connection strings
 

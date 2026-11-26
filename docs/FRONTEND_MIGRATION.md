@@ -133,6 +133,8 @@ CSV parsing and export, ICS export, column preferences, drafts.
 
 ## 6. Added after the first backend: data the API does not model yet
 
+> **Update 2026-11-27:** the *schema* for everything in this table now exists (migration `server/drizzle/0002_client_feedback_round2.sql`: `currency`, `bank_accounts`, `invoice_payments`, `file_refs`, `project_meetings`, `meeting_followups`, attachment columns, 3-value project phase with a data fix). The *API endpoints and zod schemas* for them are still to do, and so is object storage for email attachments and the logo.
+
 The web app now has these features. They live in the browser store only; the server schema (`server/src/db/schema.ts`) does not have them, so each needs a migration + endpoint before the SPA can switch over:
 
 | Feature | Client shape (src/types.ts) | Server work |
