@@ -11,6 +11,7 @@ import { useStorageFailed } from '@/lib/safeStorage'
 import { useAuth } from '@/auth'
 import { canOpen } from '@/lib/access'
 import { NativeSelect } from '@/components/NativeSelect'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { Permission, PmFeature } from '@/types'
 
@@ -84,6 +85,16 @@ export const MODULES: Module[] = [
   },
 ]
 
+/** Label that appears to the right of a rail button on hover or keyboard focus. */
+function RailTip({ label, children }: { label: React.ReactNode; children: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent side="right" sideOffset={10}>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function AppShell() {
   const { pathname } = useLocation()
   const nav = useNavigate()
@@ -106,41 +117,47 @@ export function AppShell() {
   return (
     <div className="flex h-screen bg-background text-foreground">
       {/* Layer 1: modules */}
-      <aside className="flex w-[76px] shrink-0 flex-col items-center border-r bg-background py-3">
-        <div className="mb-3 grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground" title="HireFlow">
-          <FolderKanban className="size-5" />
-        </div>
-        <div className="mb-3 h-px w-8 bg-border" />
-        <div className="flex flex-col gap-2">
+      <aside className="flex w-14 shrink-0 flex-col items-center border-r bg-background py-3">
+        <RailTip label="HireFlow">
+          <div className="mb-3 grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <FolderKanban className="size-4" />
+          </div>
+        </RailTip>
+        <div className="mb-3 h-px w-6 bg-border" />
+        <div className="flex flex-col gap-1.5">
           {MODULES.map((m) => (
-            <button
-              key={m.id}
-              title={locked(m.base) ? `${m.title} (locked)` : m.title}
-              aria-label={m.title}
-              onClick={() => nav(m.base)}
-              className={cn(
-                'relative grid size-11 place-items-center rounded-xl transition-colors',
-                current?.id === m.id ? 'bg-primary/10 text-foreground ring-2 ring-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70',
-                locked(m.base) && 'opacity-50',
-              )}
-            >
-              <m.icon className="size-5" />
-              {locked(m.base) && <Lock className="absolute -right-1 -bottom-1 size-3.5 rounded-full bg-background p-0.5 text-muted-foreground ring-1 ring-border" />}
-              {m.id === 'pm' && billingAlerts > 0 && (
-                <span title={`${billingAlerts} billing items need action`} className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] leading-4 font-semibold text-white">{billingAlerts}</span>
-              )}
-            </button>
+            <RailTip key={m.id} label={<>{m.title}{locked(m.base) && ' (locked)'}{m.id === 'pm' && billingAlerts > 0 && ` · ${billingAlerts} billing item${billingAlerts === 1 ? '' : 's'} need action`}</>}>
+              <button
+                aria-label={m.title}
+                onClick={() => nav(m.base)}
+                className={cn(
+                  'relative grid size-9 place-items-center rounded-lg transition-colors',
+                  current?.id === m.id ? 'bg-primary/10 text-foreground ring-2 ring-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70',
+                  locked(m.base) && 'opacity-50',
+                )}
+              >
+                <m.icon className="size-[18px]" />
+                {locked(m.base) && <Lock className="absolute -right-1 -bottom-1 size-3 rounded-full bg-background p-0.5 text-muted-foreground ring-1 ring-border" />}
+                {m.id === 'pm' && billingAlerts > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 grid min-w-4 place-items-center rounded-full bg-red-600 px-1 text-[10px] leading-4 font-semibold text-white">{billingAlerts}</span>
+                )}
+              </button>
+            </RailTip>
           ))}
         </div>
         <div className="mt-auto flex flex-col items-center gap-2">
-          <NavLink to="/settings" title="Roles & Settings" className={({ isActive }) => cn('grid size-10 place-items-center rounded-xl text-muted-foreground hover:bg-muted', isActive && 'bg-muted text-foreground')}>
-            <Settings className="size-5" />
-          </NavLink>
-          <div className="my-1 h-px w-8 bg-border" />
+          <RailTip label="Roles & Settings">
+            <NavLink to="/settings" aria-label="Roles & Settings" className={({ isActive }) => cn('grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted', isActive && 'bg-muted text-foreground')}>
+              <Settings className="size-[18px]" />
+            </NavLink>
+          </RailTip>
+          <div className="my-1 h-px w-6 bg-border" />
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button title={`${user.name} · ${role.name}`} className="grid size-11 place-items-center rounded-full bg-muted text-sm font-semibold hover:bg-muted/70" />}>
-              {initials}
-            </DropdownMenuTrigger>
+            <RailTip label={<>{user.name} · {role.name}</>}>
+              <DropdownMenuTrigger render={<button aria-label={`Account menu for ${user.name}`} className="grid size-9 place-items-center rounded-full bg-muted text-xs font-semibold hover:bg-muted/70" />}>
+                {initials}
+              </DropdownMenuTrigger>
+            </RailTip>
             <DropdownMenuContent side="right" align="end" className="min-w-56">
               <div className="px-2 py-1.5">
                 <div className="text-sm font-medium">{user.name}</div>

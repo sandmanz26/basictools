@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { nanoid } from 'nanoid'
-import { CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, Eye, Info, Paperclip, Pause, Play, RotateCcw, Search, Send, Trash2, TriangleAlert, UserRound } from 'lucide-react'
+import { CalendarClock, Check, ChevronLeft, ChevronRight, CircleAlert, Eye, Info, Paperclip, Pause, Play, RotateCcw, Search, Send, Trash2, TriangleAlert, UserPlus, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -27,6 +27,41 @@ const fmtDur = (s: number) => (s < 90 ? `${Math.round(s)} sec` : s < 5400 ? `${M
 const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 const dayLabel = (offset: number) => { const d = new Date(); d.setDate(d.getDate() + offset); return d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }) }
 const hours = Array.from({ length: 25 }, (_, h) => ({ value: String(h), label: `${String(h).padStart(2, '0')}:00` }))
+
+const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/
+const FREE_MAIL = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|icloud|me|proton|protonmail|aol|gmx|zoho)\./i
+const titleCase = (t: string) => t.replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim().replace(/\b\w/g, (c) => c.toUpperCase())
+const MAX_ADD = 500
+
+interface NewPerson { name: string; email: string }
+/** Read pasted text: "a@x.com", "Name <a@x.com>", "Name, a@x.com" or several addresses separated by commas, spaces or new lines. */
+function parsePeople(text: string): { people: NewPerson[]; invalid: string[] } {
+  const people: NewPerson[] = []
+  const invalid: string[] = []
+  const seen = new Set<string>()
+  const push = (name: string, raw: string) => {
+    const email = raw.trim().replace(/^[<(]+|[>),.]+$/g, '')
+    if (!EMAIL_RE.test(email)) return void invalid.push(raw.trim() || name)
+    const k = email.toLowerCase()
+    if (seen.has(k)) return
+    seen.add(k)
+    people.push({ name: name.replace(/["<>(),;]+/g, ' ').replace(/\s+/g, ' ').trim(), email })
+  }
+  for (const line of text.split(/\n+/)) {
+    let pending = '' // a name written before the address: "Name, a@x.com"
+    for (const seg of line.split(/[;,]+/)) {
+      const t = seg.trim()
+      if (!t) continue
+      const found = t.match(/[^\s<>(),;"]+@[^\s<>(),;"]+/g) ?? []
+      if (found.length === 0) { if (pending) invalid.push(pending); pending = t; continue }
+      if (found.length === 1) push(t.replace(found[0], ' ').trim() || pending, found[0])
+      else found.forEach((f) => push('', f)) // several addresses in one piece: no names
+      pending = ''
+    }
+    if (pending) invalid.push(pending) // text that never met an address
+  }
+  return { people, invalid }
+}
 
 function Pager({ page, pages, onPage, total }: { page: number; pages: number; onPage: (p: number) => void; total: number }) {
   return (
@@ -60,6 +95,11 @@ export default function MktBroadcast() {
   const [skipRecent, setSkipRecent] = useState(true)
   const [recentDays, setRecentDays] = useState<number | null>(30)
   const [excluded, setExcluded] = useState<Set<string>>(new Set())
+  // people typed in by hand: always part of the audience, whatever the filters say
+  const [extra, setExtra] = useState<Set<string>>(new Set())
+  const [addOpen, setAddOpen] = useState(false)
+  const [addText, setAddText] = useState('')
+  const [addMsg, setAddMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [listQ, setListQ] = useState('')
   const [page, setPage] = useState(0)
   // message
@@ -83,11 +123,11 @@ export default function MktBroadcast() {
   const reset = (fn: () => void) => { fn(); setExcluded(new Set()); setPage(0) }
   const sources = useMemo(() => [...new Set(leads.map((l) => l.source).filter(Boolean))].sort(), [leads])
   const owners = useMemo(() => [...new Set(leads.map((l) => l.owner).filter(Boolean))].sort(), [leads])
-  const matched = useMemo(() => leads.filter((l) =>
+  const matched = useMemo(() => leads.filter((l) => extra.has(l.id) ||
     (stageSel.size === 0 || stageSel.has(l.stage)) && (!source || l.source === source) && (!owner || l.owner === owner) &&
     (!tag.trim() || l.tags.toLowerCase().split(',').some((t) => t.trim() === tag.trim().toLowerCase())) &&
     (!contact || (contact === 'never' ? !l.lastContactAt : !!l.lastContactAt)) &&
-    (!q.trim() || `${l.name} ${l.company} ${l.title} ${l.email} ${l.tags}`.toLowerCase().includes(q.trim().toLowerCase()))), [leads, stageSel, source, owner, tag, q, contact])
+    (!q.trim() || `${l.name} ${l.company} ${l.title} ${l.email} ${l.tags}`.toLowerCase().includes(q.trim().toLowerCase()))), [leads, extra, stageSel, source, owner, tag, q, contact])
 
   // People we already emailed recently are skipped, so a re-run or overlapping list never double-sends.
   const recentSet = useMemo(() => {
@@ -134,11 +174,39 @@ export default function MktBroadcast() {
   const filterLabel = [
     stageSel.size ? `stage: ${[...stageSel].map((id) => mktStages.find((s) => s.id === id)?.label ?? id).join(', ')}` : 'all stages',
     q.trim() && `search: “${q.trim()}”`, contact && (contact === 'never' ? 'never contacted' : 'already contacted'), source && `source: ${source}`, owner && `owner: ${owner}`, tag.trim() && `tag: ${tag.trim()}`,
-    excluded.size && `${excluded.size} unticked`, recently > 0 && `${recently} skipped (emailed in last ${recentDays} days)`,
+    extra.size && `${extra.size} added by hand`, excluded.size && `${excluded.size} unticked`, recently > 0 && `${recently} skipped (emailed in last ${recentDays} days)`,
   ].filter(Boolean).join(' · ')
 
   const toggleStage = (id: string) => reset(() => setStageSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }))
   const toggle = (id: string) => setExcluded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const addLead = useStore((st) => st.addLead)
+  const parsedAdd = useMemo(() => parsePeople(addText), [addText])
+  const addPeople = () => {
+    const { people, invalid } = parsedAdd
+    if (!people.length) return
+    if (people.length > MAX_ADD) return setAddMsg({ ok: false, text: `Add at most ${MAX_ADD} people at a time.` })
+    const next = new Set(extra)
+    let created = 0, existing = 0
+    const blockedUnsub: string[] = []
+    for (const p of people) {
+      const found = leads.find((l) => l.email.trim().toLowerCase() === p.email.toLowerCase())
+      if (found) {
+        if (found.unsubscribed) { blockedUnsub.push(p.email); continue }
+        next.add(found.id); existing++
+      } else {
+        const domain = p.email.split('@')[1] ?? ''
+        const id = addLead({ name: p.name || titleCase(p.email.split('@')[0] ?? '') || p.email, email: p.email, company: FREE_MAIL.test(domain) ? '' : titleCase(domain.split('.')[0] ?? ''), source: 'Broadcast', notes: 'Added by hand from Broadcast' })
+        next.add(id); created++
+      }
+    }
+    setExtra(next)
+    setAddMsg({
+      ok: created + existing > 0,
+      text: [created && `${created} new ${created === 1 ? 'person' : 'people'} added (saved as leads)`, existing && `${existing} already in your leads, now included`, blockedUnsub.length && `${blockedUnsub.length} skipped: unsubscribed (${blockedUnsub.slice(0, 3).join(', ')}${blockedUnsub.length > 3 ? '…' : ''})`, invalid.length && `${invalid.length} not valid (${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '…' : ''})`].filter(Boolean).join(' · '),
+    })
+    if (created + existing > 0) { setAddText(''); setPage(0) }
+  }
+  const removeExtra = (id: string) => setExtra((x) => { const n = new Set(x); n.delete(id); return n })
   const applyTpl = (id: string) => { setTplId(id); const t = templates.find((x) => x.id === id); if (t) { setSubject(t.subject); setBody(t.body); setTestOk(false) } }
   const insert = (f: string) => {
     const el = bodyRef.current, tagText = `{{${f}}}`
@@ -226,6 +294,28 @@ export default function MktBroadcast() {
                       {recently > 0 && <span className="text-xs text-muted-foreground">({formatNumber(recently)} skipped)</span>}
                     </label>
 
+                    <details className="rounded-lg border" open={addOpen} onToggle={(e) => setAddOpen((e.currentTarget as HTMLDetailsElement).open)}>
+                      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm font-medium"><UserPlus className="size-4" /> Add people who are not in your leads{extra.size > 0 && <span className="rounded-full bg-muted px-2 text-xs font-normal">{extra.size} added</span>}</summary>
+                      <div className="space-y-2 border-t p-3">
+                        <p className="text-xs text-muted-foreground">Paste email addresses, one per line or separated by commas. You can write a name too: <code className="rounded bg-muted px-1">Daniel Roy &lt;daniel@company.com&gt;</code>. They are always included, whatever the filters above say, and are saved as leads (source “Broadcast”) so history, unsubscribe and follow-up work for them.</p>
+                        <Textarea rows={3} value={addText} placeholder={'daniel@company.com\nAnna Putri <anna@client.id>'} onChange={(e) => { setAddText(e.target.value); setAddMsg(null) }} />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button size="sm" disabled={!canSend || parsedAdd.people.length === 0} onClick={addPeople}><UserPlus /> Add {parsedAdd.people.length > 0 ? parsedAdd.people.length : ''} {parsedAdd.people.length === 1 ? 'person' : 'people'}</Button>
+                          {parsedAdd.invalid.length > 0 && <span className="text-xs text-red-600">Not valid: {parsedAdd.invalid.slice(0, 3).join(', ')}{parsedAdd.invalid.length > 3 ? '…' : ''}</span>}
+                        </div>
+                        {addMsg && <div className={cn('rounded-lg px-3 py-2 text-xs', addMsg.ok ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300')}>{addMsg.text}</div>}
+                        {extra.size > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {[...extra].map((id) => leads.find((l) => l.id === id)).filter((l): l is Lead => !!l).map((l) => (
+                              <span key={l.id} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs" title={l.email}>{l.name}
+                                <button type="button" aria-label={`Remove ${l.name} from this broadcast`} className="text-muted-foreground hover:text-foreground" onClick={() => removeExtra(l.id)}><X className="size-3" /></button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </details>
+
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-muted/40 px-3 py-2 text-sm">
                       <span><b className="tabular-nums">{formatNumber(recipients.length)}</b> will receive it</span>
                       <span className="text-xs text-muted-foreground">
@@ -256,7 +346,12 @@ export default function MktBroadcast() {
                               <span className="hidden text-xs text-muted-foreground sm:inline">{l.email}</span>
                             </label>
                           ))}
-                          {pageRows.length === 0 && <div className="p-4 text-center text-sm text-muted-foreground">No sendable leads match these filters.</div>}
+                          {pageRows.length === 0 && (
+                            <div className="space-y-2 p-4 text-center text-sm text-muted-foreground">
+                              <div>No sendable leads match these filters.</div>
+                              {canSend && <Button variant="outline" size="xs" onClick={() => { setAddOpen(true); if (listQ.includes('@')) setAddText(listQ) }}><UserPlus /> {listQ.includes('@') ? `Add ${listQ.trim()} as a recipient` : 'Add someone who is not in your leads'}</Button>}
+                            </div>
+                          )}
                         </div>
                         <Pager page={page} pages={pages} onPage={setPage} total={listed.length} />
                       </div>
