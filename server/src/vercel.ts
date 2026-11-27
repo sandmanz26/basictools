@@ -31,8 +31,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     ready = undefined // try again from scratch on the next request
     // eslint-disable-next-line no-console -- last-resort log: the app (and its logger) did not start
     console.error('api boot failed', err instanceof Error ? err.message : err)
+    // A bad environment is the usual first-deploy problem. loadConfig() lists only variable NAMES and what is wrong
+    // with them (never values), so showing it helps the owner fix it without opening the logs.
+    const msg = err instanceof Error ? err.message : ''
+    const reason = msg.startsWith('Invalid environment configuration') ? msg : undefined
     res.statusCode = 503
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'service_unavailable' }))
+    res.end(JSON.stringify({ error: 'service_unavailable', ...(reason ? { reason } : {}) }))
   }
 }
