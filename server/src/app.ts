@@ -71,7 +71,11 @@ export async function buildApp(ctx: AppContext, opts: BuildOptions = {}): Promis
         return { status: 'ready' }
       } catch (err) {
         req.log.error({ err }, 'readiness check failed')
-        return reply.code(503).send({ status: 'unavailable' })
+        // Owner-facing hint for first setup: error type/code and a redacted message (no URLs, so no credentials).
+        const code = (err as { code?: unknown }).code
+        const msg = (err instanceof Error ? err.message : '').replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>').slice(0, 200)
+        const reason = err instanceof Error ? `${err.name}${typeof code === 'string' ? ` (${code})` : ''}: ${msg}` : undefined
+        return reply.code(503).send({ status: 'unavailable', ...(reason ? { reason } : {}) })
       }
     })
   }
