@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { useStore } from '@/store'
 import { USERS } from '@/data/mock'
 import type { User } from '@/types'
+import { API_ON, ApiError, api, post, refreshSession, setAccessToken, setOnUnauthorized } from '@/api/client'
 import {
   DEMO_MODE, DEMO_PASSWORD, LOCK_MS, MAX_LOGIN_FAILS, MAX_RESET_TRIES, RESET_TTL_MS, SESSION_LONG_MS, SESSION_SHORT_MS, SHOW_RESET_CODE,
   hashSecret, normEmail, passwordOk, randomCode, randomHex, safeEqual, validEmail,
@@ -32,6 +33,18 @@ interface AuthState {
 const BAD = 'Incorrect email or password.'
 const bad = (error: string): Result => ({ ok: false, error })
 
+// ---- API mode (VITE_API_URL set): the server owns accounts, passwords and sessions ----
+interface ApiUser { id: string; name: string; email: string; roleKey: string; status: 'pending' | 'active' | 'disabled' }
+interface ApiSession { accessToken: string; user: ApiUser }
+const API_SESSION_MS = 365 * 24 * 60 * 60 * 1000 // the real expiry is the server's refresh cookie
+const fail = (e: unknown): Result => ({ ok: false, error: e instanceof ApiError ? e.message : 'Something went wrong. Try again.' })
+/** Put the signed-in API user into the store so permissions and "owner" fields keep working. Role ids are r-<roleKey>. */
+function adopt(u: ApiUser) {
+  const user: User = { id: u.id, name: u.name, email: u.email, roleId: 'r-' + u.roleKey, status: u.status }
+  useStore.setState((st) => ({ users: [...st.users.filter((x) => x.id !== user.id && normEmail(x.email) !== normEmail(user.email)), user], currentUserId: user.id }))
+  return user
+}
+
 export const useAuth = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -42,6 +55,15 @@ export const useAuth = create<AuthState>()(
       seeded: false,
 
       login: async (rawEmail, password, remember) => {
+        if (API_ON) {
+          try {
+            const r = await post<ApiSession>('/auth/login', { email: normEmail(rawEmail), password, remember })
+            setAccessToken(r.accessToken)
+            const user = adopt(r.user)
+            set({ session: { userId: user.id, expiresAt: Date.now() + API_SESSION_MS } })
+            return { ok: true }
+          } catch (e) { return fail(e) }
+        }
         await ready
         const email = normEmail(rawEmail)
         const f = get().fails[email]
@@ -68,6 +90,9 @@ export const useAuth = create<AuthState>()(
       },
 
       register: async (rawName, rawEmail, password) => {
+        if (API_ON) {
+          try { await post('/auth/register', { name: rawName.trim(), email: normEmail(rawEmail), password }); return { ok: true } } catch (e) { return fail(e) }
+        }
         await ready
         const name = rawName.trim()
         const email = normEmail(rawEmail)
@@ -85,9 +110,20 @@ export const useAuth = create<AuthState>()(
         return { ok: true }
       },
 
-      logout: () => set({ session: null }),
+      logout: () => {
+        if (API_ON) void post('/auth/logout').catch(() => undefined)
+        setAccessToken(null)
+        set({ session: null })
+      },
 
       changePassword: async (current, next) => {
+        if (API_ON) {
+          try {
+            const r = await post<ApiSession>('/auth/change-password', { currentPassword: current, newPassword: next })
+            setAccessToken(r.accessToken)
+            return { ok: true }
+          } catch (e) { return fail(e) }
+        }
         const uid = get().session?.userId
         const cred = get().creds.find((c) => c.userId === uid)
         if (!cred) return bad('You are not signed in.')
@@ -101,6 +137,7 @@ export const useAuth = create<AuthState>()(
       },
 
       requestReset: async (rawEmail) => {
+        if (API_ON) { await post('/auth/forgot-password', { email: normEmail(rawEmail) }).catch(() => undefined); return {} }
         await ready
         const email = normEmail(rawEmail)
         if (!get().creds.some((c) => c.email === email)) return {}
@@ -113,6 +150,9 @@ export const useAuth = create<AuthState>()(
       },
 
       confirmReset: async (rawEmail, code, next) => {
+        if (API_ON) {
+          try { await post('/auth/reset-password', { token: code.trim(), password: next }); return { ok: true } } catch (e) { return fail(e) }
+        }
         const email = normEmail(rawEmail)
         const r = get().resets[email]
         const dropReset = () => set((s) => { const resets = { ...s.resets }; delete resets[email]; return { resets } })
@@ -143,7 +183,7 @@ export const useAuth = create<AuthState>()(
 
 /** Give the demo accounts a known password the first time the app runs. */
 const ready: Promise<void> = (async () => {
-  if (!DEMO_MODE || useAuth.getState().seeded) return
+  if (API_ON || !DEMO_MODE || useAuth.getState().seeded) return
   const creds: Cred[] = []
   for (const u of USERS) {
     const salt = randomHex()
@@ -167,3 +207,14 @@ const sync = () => {
 }
 useAuth.subscribe(sync)
 sync()
+
+// API mode: bring the session back after a page reload (the refresh cookie is the proof), or drop it.
+if (API_ON) {
+  setOnUnauthorized(() => useAuth.setState({ session: null }))
+  if (useAuth.getState().session) {
+    void refreshSession().then(async (ok) => {
+      if (!ok) return useAuth.setState({ session: null })
+      try { adopt(await api<ApiUser>('GET', '/auth/me')) } catch { useAuth.setState({ session: null }) }
+    })
+  }
+}
