@@ -44,6 +44,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     res.statusCode = 503
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ error: 'service_unavailable', ...(reason ? { reason } : {}) }))
+    res.end(JSON.stringify({ error: 'service_unavailable', ...(reason ? { reason } : {}), build: (process.env.VERCEL_GIT_COMMIT_SHA ?? 'unknown').slice(0, 7), node: process.version }))
   }
 }

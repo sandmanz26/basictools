@@ -1,5 +1,4 @@
 import swagger from '@fastify/swagger'
-import swaggerUi from '@fastify/swagger-ui'
 import type { FastifyInstance } from 'fastify'
 import { jsonSchemaTransform } from 'fastify-type-provider-zod'
 
@@ -14,5 +13,9 @@ export async function registerDocs(app: FastifyInstance, enableUi: boolean): Pro
     },
     transform: jsonSchemaTransform,
   })
-  if (enableUi) await app.register(swaggerUi, { routePrefix: '/docs' })
+  if (enableUi) {
+    // Loaded only when the docs UI is on: its @fastify/static dependency pulls an ES-only package that older Node cannot require().
+    const { default: swaggerUi } = await import('@fastify/swagger-ui')
+    await app.register(swaggerUi, { routePrefix: '/docs' })
+  }
 }
