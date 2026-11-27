@@ -9,6 +9,7 @@ import { useAutoDrafts, useBillingAlerts } from '@/lib/alerts'
 import { useBroadcastAutoResume } from '@/lib/broadcast'
 import { useStorageFailed } from '@/lib/safeStorage'
 import { useAuth } from '@/auth'
+import { useApiStatus } from '@/api/status'
 import { canOpen } from '@/lib/access'
 import { NativeSelect } from '@/components/NativeSelect'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -106,6 +107,7 @@ export function AppShell() {
   useAutoDrafts(can('pm.invoice'))
   useBroadcastAutoResume()
   const storageFailed = useStorageFailed()
+  const syncError = useApiStatus((s) => s.error)
   const current = MODULES.find((m) => pathname === m.base || pathname.startsWith(m.base + '/'))
   // Every module stays in the rail; the ones this role can't open are shown locked.
   const locked = (path: string) => !canOpen(can, path)
@@ -213,6 +215,13 @@ export function AppShell() {
           <div role="alert" className="flex items-center gap-2 border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
             <TriangleAlert className="size-4 shrink-0" />
             <span><b>Your browser storage is full or blocked.</b> Recent changes are not being saved and will be lost on reload. Export what you need (CSV) now; large lists need the server database.</span>
+          </div>
+        )}
+        {syncError && (
+          <div role="alert" className="flex items-center gap-2 border-b border-red-300 bg-red-50 px-4 py-2 text-sm text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100">
+            <TriangleAlert className="size-4 shrink-0" />
+            <span className="flex-1">{syncError}</span>
+            <button type="button" onClick={() => useApiStatus.getState().clear()} className="rounded px-2 py-0.5 text-xs font-medium underline underline-offset-4">Dismiss</button>
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-hidden"><Outlet /></div>

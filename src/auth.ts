@@ -4,6 +4,8 @@ import { nanoid } from 'nanoid'
 import { useStore } from '@/store'
 import { USERS } from '@/data/mock'
 import type { User } from '@/types'
+import { hydrateHr, clearHr } from '@/api/hydrate'
+import { reportSyncError } from '@/api/status'
 import { API_ON, ApiError, api, post, refreshSession, setAccessToken, setOnUnauthorized } from '@/api/client'
 import {
   DEMO_MODE, DEMO_PASSWORD, LOCK_MS, MAX_LOGIN_FAILS, MAX_RESET_TRIES, RESET_TTL_MS, SESSION_LONG_MS, SESSION_SHORT_MS, SHOW_RESET_CODE,
@@ -60,6 +62,8 @@ export const useAuth = create<AuthState>()(
             const r = await post<ApiSession>('/auth/login', { email: normEmail(rawEmail), password, remember })
             setAccessToken(r.accessToken)
             const user = adopt(r.user)
+            clearHr() // never show a previous account's cached data
+            void hydrateHr().catch(reportSyncError)
             set({ session: { userId: user.id, expiresAt: Date.now() + API_SESSION_MS } })
             return { ok: true }
           } catch (e) { return fail(e) }
@@ -113,6 +117,7 @@ export const useAuth = create<AuthState>()(
       logout: () => {
         if (API_ON) void post('/auth/logout').catch(() => undefined)
         setAccessToken(null)
+        if (API_ON) clearHr()
         set({ session: null })
       },
 
@@ -214,7 +219,8 @@ if (API_ON) {
   if (useAuth.getState().session) {
     void refreshSession().then(async (ok) => {
       if (!ok) return useAuth.setState({ session: null })
-      try { adopt(await api<ApiUser>('GET', '/auth/me')) } catch { useAuth.setState({ session: null }) }
+      try { adopt(await api<ApiUser>('GET', '/auth/me')) } catch { return useAuth.setState({ session: null }) }
+      void hydrateHr().catch(reportSyncError)
     })
   }
 }

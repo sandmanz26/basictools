@@ -36,7 +36,7 @@ const base = {
   testFiles: z.array(testFile).max(50).default([]),
   formLinks: z.array(formLink).max(50).default([]),
 }
-const positionCreate = z.object(base)
+const positionCreate = z.object({ ...base, id: z.uuid().optional() })
 const positionUpdate = patchOf(z.object(base))
 
 const positionOut = z.object({

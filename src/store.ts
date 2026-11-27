@@ -37,6 +37,8 @@ import { nextInvoiceNumber, balanceDue, lastPaymentDate, migratePhase } from '@/
 import { DEFAULT_STATUSES, FIELDS_STANDARD, DEFAULT_INFO, DEFAULT_PM_STAGES, NO_FEATURES } from '@/lib/pm'
 import { findTalent } from '@/lib/talent'
 import type { ImportRecord } from '@/lib/importExport'
+import { API_ON } from '@/api/client'
+import { fetchCandidates, newId, pushCandidate, pushImport, pushPosition, pushProject, pushTalent } from '@/api/hr'
 import { DEFAULT_LEAD_COLUMNS, DEFAULT_MKT_STAGES, DEFAULT_STAGES, emptyRound, lostStageId, nextStageId, today } from '@/lib/constants'
 
 /** Sent-email history keeps the newest this-many rows (a 4,300-person broadcast must fit). */
@@ -231,17 +233,20 @@ const seed = () => ({
   activeProjectId: 'p1',
 })
 
+/** Ids are UUIDs when the API is on (the server keeps the id the browser made), short random ids in demo mode. */
+const mkId = (prefix: string) => (API_ON ? newId() : prefix + nanoid(6))
+
 const stagesOf = (s: State, projectId: string) => s.projects.find((p) => p.id === projectId)?.stages ?? DEFAULT_STAGES()
 const stageById = (st: Stage[], id: string) => st.find((x) => x.id === id)
 
 const blankCandidate = (projectId: string, talentId: string, stage: Stage | undefined): Candidate => ({
-  id: 'c-' + nanoid(6), projectId, talentId, name: '', email: '', phone: '', positionId: '', source: '',
+  id: mkId('c-'), projectId, talentId, name: '', email: '', phone: '', positionId: '', source: '',
   screeningScore: null, screeningResult: 'pending', salaryMin: null, salaryMax: null, archived: false, arrangement: 'Any',
   stage: stage?.id ?? '', nextStep: stage?.nextStep ?? '', owner: 'Sari', appliedAt: today(), rejectReason: '', notes: '', rounds: {},
 })
 
 const newTalent = (p: Partial<Talent>): Talent => ({
-  id: 't-' + nanoid(6), name: '', email: '', phone: '', source: '', skills: '', salaryMin: null, salaryMax: null,
+  id: mkId('t-'), name: '', email: '', phone: '', source: '', skills: '', salaryMin: null, salaryMax: null,
   arrangement: 'Any', notes: '', createdAt: today(), ...p,
 })
 
@@ -255,6 +260,10 @@ const fillTalent = (t: Talent, r: Partial<Talent>): Talent => ({
 
 const mapC = (s: State, id: string, fn: (c: Candidate) => Candidate) =>
   ({ candidates: s.candidates.map((c) => (c.id === id ? fn(c) : c)) })
+
+/** A candidate as the server saved it (stage moves, round results and reschedules are decided there). */
+const applyServerCandidate = (c: Candidate) => useStore.setState((s) => ({ candidates: s.candidates.map((x) => (x.id === c.id ? c : x)) }))
+const applyServerPosition = (p: Position) => useStore.setState((s) => ({ positions: s.positions.map((x) => (x.id === p.id ? { ...x, questions: p.questions } : x)) }))
 
 export const useStore = create<State>()(
   persist(
@@ -386,14 +395,19 @@ export const useStore = create<State>()(
           // invoiceId '' means deleted on purpose: don't auto-draft it again
           scheduleEvents: Object.fromEntries(Object.entries(s.scheduleEvents).map(([k, e]) => [k, e.invoiceId === id ? { ...e, invoiceId: '' } : e])),
         })),
-      setStatuses: (statuses) => set({ statuses }),
+      setStatuses: (statuses) => { set({ statuses }); if (API_ON) pushProject.setStatuses(statuses) },
       // Move every project and status update from one status to another (used before deleting a status).
-      remapStatus: (fromId, toId) =>
+      remapStatus: (fromId, toId) => {
         set((s) => ({
           projects: s.projects.map((p) => (p.info.health === fromId ? { ...p, info: { ...p.info, health: toId } } : p)),
           updates: s.updates.map((u) => (u.health === fromId ? { ...u, health: toId } : u)),
-        })),
-      setPmFeatures: (projectId, f) => set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: f } : p)) })),
+        }))
+        if (API_ON) pushProject.remapStatus(fromId, toId)
+      },
+      setPmFeatures: (projectId, f) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: f } : p)) }))
+        if (API_ON) pushProject.update(projectId, { pmFeatures: f })
+      },
       setBillingProfile: (patch) => set((s) => ({ billingProfile: { ...s.billingProfile, ...patch } })),
 
       // One recurring occurrence -> one draft invoice, filled from the schedule (and its project).
@@ -439,10 +453,14 @@ export const useStore = create<State>()(
         }
         return n
       },
-      setPmFields: (projectId, fields) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFields: fields } : p)) })),
-      setPmFeature: (projectId, feature, on) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: { ...p.pmFeatures, [feature]: on } } : p)) })),
+      setPmFields: (projectId, fields) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFields: fields } : p)) }))
+        if (API_ON) pushProject.update(projectId, { pmFields: fields })
+      },
+      setPmFeature: (projectId, feature, on) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmFeatures: { ...p.pmFeatures, [feature]: on } } : p)) }))
+        if (API_ON) pushProject.update(projectId, { pmFeatures: { [feature]: on } })
+      },
       addBroadcast: (b) => set((s) => ({ broadcasts: [b, ...s.broadcasts] })),
       updateBroadcast: (id, patch) => set((s) => ({ broadcasts: s.broadcasts.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
       setBroadcastRecipient: (id, leadId, status) =>
@@ -462,17 +480,19 @@ export const useStore = create<State>()(
       setProject: (id) => set({ activeProjectId: id }),
 
       addProject: (name, description) => {
-        const id = 'p-' + nanoid(6)
-        set((s) => ({
-          projects: [...s.projects, { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: NO_FEATURES(), pmFields: FIELDS_STANDARD(), info: { ...DEFAULT_INFO(), startDate: today() } }],
-          activeProjectId: id,
-        }))
+        const id = mkId('p-')
+        const project: Project = { id, name, description, status: 'active', createdAt: today(), stages: DEFAULT_STAGES(), pmStages: DEFAULT_PM_STAGES(), pmFeatures: NO_FEATURES(), pmFields: FIELDS_STANDARD(), info: { ...DEFAULT_INFO(), startDate: today() } }
+        set((s) => ({ projects: [...s.projects, project], activeProjectId: id }))
+        if (API_ON) pushProject.create(project)
         return id
       },
-      updateProject: (id, patch) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
+      updateProject: (id, patch) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)) }))
+        if (API_ON) pushProject.fields(id, patch)
+      },
 
-      deleteProject: (id) =>
+      deleteProject: (id) => {
+        if (API_ON) pushProject.remove(id)
         set((s) => {
           const projects = s.projects.filter((p) => p.id !== id)
           return {
@@ -490,9 +510,10 @@ export const useStore = create<State>()(
             projectMeetings: s.projectMeetings.filter((x) => x.projectId !== id),
             activeProjectId: s.activeProjectId === id ? (projects.find((p) => p.status === 'active') ?? projects[0])?.id ?? '' : s.activeProjectId,
           }
-        }),
+        })
+      },
       duplicateProject: (id) => {
-        const nid = 'p-' + nanoid(6)
+        const nid = mkId('p-')
         set((s) => {
           const src = s.projects.find((p) => p.id === id)!
           return {
@@ -504,25 +525,39 @@ export const useStore = create<State>()(
             activeProjectId: nid,
           }
         })
+        if (API_ON) {
+          const st = get()
+          const np = st.projects.find((p) => p.id === nid)
+          if (np) void pushProject.create(np).then(() => { for (const p of st.positions.filter((x) => x.projectId === nid)) pushPosition.create(p) })
+        }
         return nid
       },
-      setStages: (projectId, stages) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, stages } : p)) })),
-      setPmStages: (projectId, stages) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmStages: stages } : p)) })),
-      removePmStage: (projectId, stageId, moveTo) =>
+      setStages: (projectId, stages) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, stages } : p)) }))
+        if (API_ON) pushProject.update(projectId, { stages })
+      },
+      setPmStages: (projectId, stages) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmStages: stages } : p)) }))
+        if (API_ON) pushProject.update(projectId, { pmStages: stages })
+      },
+      removePmStage: (projectId, stageId, moveTo) => {
+        if (API_ON) pushProject.removePmStage(projectId, stageId, moveTo)
         set((s) => ({
           projects: s.projects.map((p) => (p.id === projectId ? { ...p, pmStages: p.pmStages.filter((x) => x.id !== stageId) } : p)),
           tasks: s.tasks.map((t) => (t.projectId === projectId && t.stage === stageId ? { ...t, stage: moveTo } : t)),
-        })),
-      updateInfo: (projectId, patch) =>
-        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, info: { ...p.info, ...patch } } : p)) })),
+        }))
+      },
+      updateInfo: (projectId, patch) => {
+        set((s) => ({ projects: s.projects.map((p) => (p.id === projectId ? { ...p, info: { ...p.info, ...patch } } : p)) }))
+        if (API_ON) pushProject.update(projectId, { info: patch })
+      },
       // Generic CRUD for the PM collections (tasks, milestones, risks, members, budget, updates).
       pmAdd: (k, item) => set((s) => ({ [k]: [...(s[k] as unknown[]), item] }) as Partial<State>),
       pmUpdate: (k, id, patch) =>
         set((s) => ({ [k]: (s[k] as { id: string }[]).map((x) => (x.id === id ? { ...x, ...patch } : x)) }) as Partial<State>),
       pmDelete: (k, id) => set((s) => ({ [k]: (s[k] as { id: string }[]).filter((x) => x.id !== id) }) as Partial<State>),
-      removeStage: (projectId, stageId, moveTo) =>
+      removeStage: (projectId, stageId, moveTo) => {
+        if (API_ON) pushProject.removeStage(projectId, stageId, moveTo)
         set((s) => {
           const target = stageById(stagesOf(s, projectId), moveTo)
           return {
@@ -531,16 +566,19 @@ export const useStore = create<State>()(
               c.projectId === projectId && c.stage === stageId ? { ...c, stage: moveTo, nextStep: target?.nextStep ?? c.nextStep } : c,
             ),
           }
-        }),
+        })
+      },
 
       addCandidate: (c) => {
         const cand = blankCandidate(get().activeProjectId, '', stagesOf(get(), get().activeProjectId)[0])
         const talent = newTalent({ name: 'New candidate', source: 'LinkedIn' })
         const full: Candidate = { ...cand, name: talent.name, source: talent.source, ...c, talentId: talent.id }
         set((s) => ({ talents: [talent, ...s.talents], candidates: [full, ...s.candidates] }))
+        if (API_ON) pushCandidate.create(full)
         return full.id
       },
-      updateCandidate: (id, patch) =>
+      updateCandidate: (id, patch) => {
+        if (API_ON) pushCandidate.update(id, patch, patch.stage && patch.stage !== get().candidates.find((c) => c.id === id)?.stage ? patch.stage : undefined)
         set((s) => {
           const cur = s.candidates.find((c) => c.id === id)
           const shared: Partial<Candidate> = {}
@@ -550,11 +588,15 @@ export const useStore = create<State>()(
             candidates: s.candidates.map((c) => (c.id === id ? { ...c, ...patch } : c.talentId === cur.talentId ? { ...c, ...shared } : c)),
             talents: s.talents.map((t) => (t.id === cur.talentId ? { ...t, ...shared } : t)),
           }
-        }),
-      updateRound: (id, key, patch) =>
-        set((s) => mapC(s, id, (c) => ({ ...c, rounds: { ...c.rounds, [key]: { ...(c.rounds[key] ?? emptyRound()), ...patch } } }))),
+        })
+      },
+      updateRound: (id, key, patch) => {
+        set((s) => mapC(s, id, (c) => ({ ...c, rounds: { ...c.rounds, [key]: { ...(c.rounds[key] ?? emptyRound()), ...patch } } })))
+        if (API_ON) pushCandidate.round(id, key, patch as Record<string, unknown>)
+      },
       // Setting a result moves the candidate: pass -> next stage, fail -> the pipeline's "lost" stage.
-      setRoundResult: (id, key, result) =>
+      setRoundResult: (id, key, result) => {
+        if (API_ON) pushCandidate.result(id, key, result, applyServerCandidate)
         set((s) =>
           mapC(s, id, (c) => {
             const stages = stagesOf(s, c.projectId)
@@ -564,9 +606,11 @@ export const useStore = create<State>()(
             if (result === 'fail') stage = lostStageId(stages) ?? c.stage
             return { ...c, rounds, stage, nextStep: stage !== c.stage ? stageById(stages, stage)?.nextStep ?? c.nextStep : c.nextStep }
           }),
-        ),
+        )
+      },
       // Repeat an interview: keep the old attempt in history and open a fresh slot to schedule again.
-      rescheduleRound: (id, key, reason) =>
+      rescheduleRound: (id, key, reason) => {
+        if (API_ON) pushCandidate.reschedule(id, key, reason, applyServerCandidate)
         set((s) =>
           mapC(s, id, (c) => {
             const stages = stagesOf(s, c.projectId)
@@ -584,18 +628,29 @@ export const useStore = create<State>()(
               nextStep: `Reschedule ${label} (attempt ${history.length + 1})`,
             }
           }),
-        ),
-      moveCandidate: (id, stage) =>
-        set((s) => mapC(s, id, (c) => ({ ...c, stage, nextStep: stageById(stagesOf(s, c.projectId), stage)?.nextStep ?? c.nextStep }))),
-      archiveCandidate: (id, archived) => set((s) => mapC(s, id, (c) => ({ ...c, archived }))),
-      deleteCandidate: (id) => set((s) => ({ candidates: s.candidates.filter((c) => c.id !== id) })),
+        )
+      },
+      moveCandidate: (id, stage) => {
+        set((s) => mapC(s, id, (c) => ({ ...c, stage, nextStep: stageById(stagesOf(s, c.projectId), stage)?.nextStep ?? c.nextStep })))
+        if (API_ON) pushCandidate.move(id, stage, applyServerCandidate)
+      },
+      archiveCandidate: (id, archived) => {
+        set((s) => mapC(s, id, (c) => ({ ...c, archived })))
+        if (API_ON) pushCandidate.archive(id, archived)
+      },
+      deleteCandidate: (id) => {
+        set((s) => ({ candidates: s.candidates.filter((c) => c.id !== id) }))
+        if (API_ON) pushCandidate.remove(id)
+      },
 
       addTalent: (t) => {
         const talent = newTalent({ name: 'New talent', ...t })
         set((s) => ({ talents: [talent, ...s.talents] }))
+        if (API_ON) pushTalent.create(talent)
         return talent.id
       },
-      updateTalent: (id, patch) =>
+      updateTalent: (id, patch) => {
+        if (API_ON) pushTalent.update(id, patch)
         set((s) => {
           const shared: Partial<Candidate> = {}
           for (const k of ['name', 'email', 'phone'] as const) if (k in patch) shared[k] = patch[k]
@@ -603,13 +658,16 @@ export const useStore = create<State>()(
             talents: s.talents.map((t) => (t.id === id ? { ...t, ...patch } : t)),
             candidates: Object.keys(shared).length ? s.candidates.map((c) => (c.talentId === id ? { ...c, ...shared } : c)) : s.candidates,
           }
-        }),
+        })
+      },
       // Project candidates stay; they just lose the link to the pool.
-      deleteTalent: (id) =>
+      deleteTalent: (id) => {
+        if (API_ON) pushTalent.remove(id)
         set((s) => ({
           talents: s.talents.filter((t) => t.id !== id),
           candidates: s.candidates.map((c) => (c.talentId === id ? { ...c, talentId: '' } : c)),
-        })),
+        }))
+      },
       addTalentsToProject: (projectId, talentIds, positionId, opts) => {
         const s = get()
         const stages = stagesOf(s, projectId)
@@ -626,10 +684,17 @@ export const useStore = create<State>()(
           })
         }
         set({ candidates: [...add, ...s.candidates] })
+        // The server decides who is already in the project; take its candidates back afterwards.
+        if (API_ON && talentIds.length) {
+          pushCandidate.fromTalents(projectId, talentIds, positionId, opts, () => {
+            void fetchCandidates(projectId).then((list) => useStore.setState((st) => ({ candidates: [...list, ...st.candidates.filter((c) => c.projectId !== projectId)] })))
+          })
+        }
         return add.length
       },
       importCandidates: (projectId, records, opts) => {
         const s = get()
+        const before = { talents: s.talents, candidates: s.candidates, positions: s.positions }
         const stages = stagesOf(s, projectId)
         let talents = [...s.talents]
         let candidates = [...s.candidates]
@@ -685,9 +750,19 @@ export const useStore = create<State>()(
           sum.added++
         }
         set({ talents, candidates, positions })
+        if (API_ON) {
+          const ids = <T extends { id: string }>(l: T[]) => new Map(l.map((x) => [x.id, x]))
+          const bt = ids(before.talents), bc = ids(before.candidates), bp = ids(before.positions)
+          pushImport({
+            positions: positions.filter((p) => !bp.has(p.id)),
+            talents: { create: talents.filter((t) => !bt.has(t.id)), update: talents.filter((t) => bt.has(t.id) && bt.get(t.id) !== t) },
+            candidates: { create: candidates.filter((c) => !bc.has(c.id)), update: candidates.filter((c) => bc.has(c.id) && bc.get(c.id) !== c), before: bc },
+          }, () => undefined)
+        }
         return sum
       },
       importTalents: (records) => {
+        const beforeTalents = get().talents
         let talents = [...get().talents]
         const sum: ImportSummary = { added: 0, updated: 0, skipped: 0, newTalents: 0, newPositions: 0 }
         for (const r of records) {
@@ -702,43 +777,52 @@ export const useStore = create<State>()(
           }
         }
         set({ talents })
+        if (API_ON) {
+          const bt = new Map(beforeTalents.map((t) => [t.id, t]))
+          void pushImport({ positions: [], talents: { create: talents.filter((t) => !bt.has(t.id)), update: talents.filter((t) => bt.has(t.id) && bt.get(t.id) !== t) }, candidates: { create: [], update: [], before: new Map() } }, () => undefined)
+        }
         return sum
       },
 
       addPosition: (projectId) => {
-        const id = 'pos-' + nanoid(6)
-        set((s) => ({
-          positions: [
-            ...s.positions,
-            {
-              id, projectId, title: 'New position', department: '', level: 'Mid', headcount: 1, status: 'draft',
-              arrangement: 'Hybrid', salaryMin: null, salaryMax: null, description: '', requirements: '', questions: [],
-            },
-          ],
-        }))
+        const id = mkId('pos-')
+        const position: Position = {
+          id, projectId, title: 'New position', department: '', level: 'Mid', headcount: 1, status: 'draft',
+          arrangement: 'Hybrid', salaryMin: null, salaryMax: null, description: '', requirements: '', questions: [],
+        }
+        set((s) => ({ positions: [...s.positions, position] }))
+        if (API_ON) pushPosition.create(position)
         return id
       },
-      updatePosition: (id, patch) =>
-        set((s) => ({ positions: s.positions.map((p) => (p.id === id ? { ...p, ...patch } : p)) })),
+      updatePosition: (id, patch) => {
+        set((s) => ({ positions: s.positions.map((p) => (p.id === id ? { ...p, ...patch } : p)) }))
+        if (API_ON) pushPosition.update(id, patch)
+      },
       // Candidates keep their row (just without a position); share links stop pointing at it.
-      deletePosition: (id) =>
+      deletePosition: (id) => {
+        if (API_ON) pushPosition.remove(id)
         set((s) => ({
           positions: s.positions.filter((p) => p.id !== id),
           candidates: s.candidates.map((c) => (c.positionId === id ? { ...c, positionId: '' } : c)),
           shares: s.shares.map((x) => (x.positionIds.includes(id) ? { ...x, positionIds: x.positionIds.filter((p) => p !== id) } : x)),
-        })),
-      upsertQuestion: (pid, q) =>
+        }))
+      },
+      upsertQuestion: (pid, q) => {
         set((s) => ({
           positions: s.positions.map((p) =>
             p.id !== pid
               ? p
               : { ...p, questions: p.questions.some((x) => x.id === q.id) ? p.questions.map((x) => (x.id === q.id ? q : x)) : [...p.questions, q] },
           ),
-        })),
-      deleteQuestion: (pid, qid) =>
+        }))
+        if (API_ON) pushPosition.questions(pid, get().positions.find((p) => p.id === pid)?.questions ?? [], applyServerPosition)
+      },
+      deleteQuestion: (pid, qid) => {
         set((s) => ({
           positions: s.positions.map((p) => (p.id === pid ? { ...p, questions: p.questions.filter((q) => q.id !== qid) } : p)),
-        })),
+        }))
+        if (API_ON) pushPosition.questions(pid, get().positions.find((p) => p.id === pid)?.questions ?? [], applyServerPosition)
+      },
 
       updateRole: (id, patch) => set((s) => ({ roles: s.roles.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
       togglePermission: (roleId, p) =>

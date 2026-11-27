@@ -51,6 +51,8 @@ export const projectOut = z.object({
 })
 
 export const projectCreate = z.object({
+  /** Optional client-generated id, so the browser can create and show a record before the server answers. */
+  id: z.uuid().optional(),
   name: z.string().trim().min(1).max(200),
   description: z.string().max(5000).default(''),
   stages: stagesSchema.optional(),

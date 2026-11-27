@@ -42,7 +42,8 @@ const base = {
   notes: z.string().max(10_000).default(''),
 }
 
-export const candidateCreate = z.object({ ...base, stage: z.string().max(80).optional(), nextStep: z.string().max(500).optional() })
+/** `id` / `talentId` let the browser pick the ids (talentId is used only when a new pool entry has to be created). */
+export const candidateCreate = z.object({ ...base, id: z.uuid().optional(), talentId: z.uuid().optional(), rounds: roundsSchema.optional(), archived: z.boolean().optional(), stage: z.string().max(80).optional(), nextStep: z.string().max(500).optional() })
 export const candidateUpdate = patchOf(z.object({ ...base, archived: z.boolean(), nextStep: z.string().max(500) }))
 
 export const candidateOut = z.object({

@@ -22,7 +22,7 @@ const base = {
   arrangement: arrangementEnum.default('Any'),
   notes: z.string().max(10_000).default(''),
 }
-const talentCreate = z.object(base)
+const talentCreate = z.object({ ...base, id: z.uuid().optional() })
 const talentUpdate = patchOf(z.object(base))
 const talentOut = z.object({ id: z.uuid(), ...base, createdAt: isoTs, updatedAt: isoTs })
 

@@ -42,6 +42,7 @@ export const projectRoutes: FastifyPluginAsyncZod = async (app) => {
     const [row] = await db
       .insert(projects)
       .values({
+        ...(b.id ? { id: b.id } : {}),
         name: b.name,
         description: b.description,
         stages: b.stages ?? DEFAULT_HR_STAGES(),

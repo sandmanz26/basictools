@@ -67,11 +67,15 @@ export const candidateRoutes: FastifyPluginAsyncZod = async (app) => {
     const input = dropSalaryInput(req.body, a.can('salary.view'))
     const row = await db.transaction(async (tx) => {
       const pool = await tx.select({ id: talents.id, name: talents.name, email: talents.email, phone: talents.phone }).from(talents)
-      let talentId = new TalentIndex<PersonKey & { id: string }>(pool).find({ name: input.name, email: input.email, phone: input.phone })?.id
+      // An explicit talentId means the web app already decided: link to that pool entry, or create it with that id.
+      // Without one, look the person up in the pool (email, phone, then name).
+      let talentId = input.talentId
+        ? pool.find((t) => t.id === input.talentId)?.id
+        : new TalentIndex<PersonKey & { id: string }>(pool).find({ name: input.name, email: input.email, phone: input.phone })?.id
       if (!talentId) {
         const [t] = await tx
           .insert(talents)
-          .values({ name: input.name, email: input.email, phone: input.phone, source: input.source, salaryMin: input.salaryMin ?? null, salaryMax: input.salaryMax ?? null, arrangement: input.arrangement, notes: input.notes })
+          .values({ ...(input.talentId ? { id: input.talentId } : {}), name: input.name, email: input.email, phone: input.phone, source: input.source, salaryMin: input.salaryMin ?? null, salaryMax: input.salaryMax ?? null, arrangement: input.arrangement, notes: input.notes })
           .returning({ id: talents.id })
         talentId = t?.id
       }

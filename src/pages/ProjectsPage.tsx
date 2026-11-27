@@ -17,15 +17,13 @@ export default function ProjectsPage() {
   const project: Project | undefined = projects.find((p) => p.id === sel) ?? projects[0]
   const countC = (id: string) => candidates.filter((c) => c.projectId === id).length
 
-  if (!project) return <div className="p-6 text-sm text-muted-foreground">No projects yet.</div>
-
   return (
     <div className="flex h-full">
       <div className="flex w-72 shrink-0 flex-col border-r">
         <div className="p-4 pb-2"><h1 className="font-semibold">Projects</h1></div>
         <div className="flex-1 space-y-1 overflow-y-auto p-2">
           {projects.map((p) => (
-            <button key={p.id} onClick={() => setSel(p.id)} className={cn('w-full rounded-lg px-3 py-2 text-left hover:bg-muted', project.id === p.id && 'bg-muted')}>
+            <button key={p.id} onClick={() => setSel(p.id)} className={cn('w-full rounded-lg px-3 py-2 text-left hover:bg-muted', project?.id === p.id && 'bg-muted')}>
               <div className="flex items-center gap-2 text-sm font-medium">
                 <span className="truncate">{p.name}</span>
                 {p.status === 'archived' && <span className="ml-auto rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">archived</span>}
@@ -43,6 +41,9 @@ export default function ProjectsPage() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-y-auto p-6">
+        {!project ? (
+          <div className="text-sm text-muted-foreground">{can ? 'No projects yet. Add the first one with the box on the left.' : 'No projects yet.'}</div>
+        ) : (
         <div className="mx-auto max-w-4xl space-y-5">
           {!can && <div className="rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">Your role can’t manage projects or pipeline stages.</div>}
           <div className="flex items-start gap-3">
@@ -79,6 +80,7 @@ export default function ProjectsPage() {
             </TabsContent>
           </Tabs>
         </div>
+        )}
       </div>
 
     </div>
