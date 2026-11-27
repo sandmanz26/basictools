@@ -34,7 +34,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // A bad environment is the usual first-deploy problem. loadConfig() lists only variable NAMES and what is wrong
     // with them (never values), so showing it helps the owner fix it without opening the logs.
     const msg = err instanceof Error ? err.message : ''
-    const reason = msg.startsWith('Invalid environment configuration') ? msg : undefined
+    let reason: string | undefined
+    if (msg.startsWith('Invalid environment configuration')) reason = msg
+    else if (err instanceof Error) {
+      // Other boot failures (database unreachable, module load...): show the error type, code and a redacted message.
+      const code = (err as { code?: unknown }).code
+      const safe = msg.replace(/[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<url>').slice(0, 200)
+      reason = `${err.name}${typeof code === 'string' ? ` (${code})` : ''}: ${safe}`
+    }
     res.statusCode = 503
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ error: 'service_unavailable', ...(reason ? { reason } : {}) }))
