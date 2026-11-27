@@ -14,7 +14,8 @@ import { createMailProvider } from './mail/index.js'
 let ready: ReturnType<typeof boot> | undefined
 
 async function boot() {
-  const config = loadConfig()
+  // API docs UI is never served from the Function (its @fastify/static dependency cannot be require()d on Vercel).
+  const config = { ...loadConfig(), DOCS_ENABLED: false }
   // A function instance serves one request at a time; keep database connections minimal.
   const handle = createDb({ ...config, DB_POOL_MAX: Math.min(config.DB_POOL_MAX, 2) })
   const app = await buildApp({ config, db: handle.db, ping: handle.ping, hasher: createPasswordHasher(config), mail: createMailProvider(config) })
