@@ -1,7 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/((?!assets/).*)",
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!assets/|api/).*)",
       "destination": "/index.html"
     }
   ],
@@ -57,5 +61,13 @@
         }
       ]
     }
-  ]
+  ],
+  "installCommand": "npm ci && npm ci --prefix server",
+  "buildCommand": "npm --prefix server run build && npm run build",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60,
+      "includeFiles": "server/dist/**"
+    }
+  }
 }

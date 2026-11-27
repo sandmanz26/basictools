@@ -16,6 +16,7 @@ import { scheduleRoutes } from './modules/schedules/routes.js'
 import { shareRoutes } from './modules/share/routes.js'
 import { crudRoutes } from './modules/crud/routes.js'
 import { broadcastRoutes } from './modules/broadcasts/routes.js'
+import { cronRoutes } from './modules/cron/routes.js'
 import { unsubscribeRoutes } from './modules/broadcasts/unsubscribe-routes.js'
 
 export interface BuildOptions {
@@ -61,16 +62,19 @@ export async function buildApp(ctx: AppContext, opts: BuildOptions = {}): Promis
   await registerSecurity(app, config)
   await registerDocs(app, config.DOCS_ENABLED)
 
-  app.get('/healthz', { schema: { hide: true } }, async () => ({ status: 'ok' }))
-  app.get('/readyz', { schema: { hide: true } }, async (req, reply) => {
-    try {
-      await ctx.ping()
-      return { status: 'ready' }
-    } catch (err) {
-      req.log.error({ err }, 'readiness check failed')
-      return reply.code(503).send({ status: 'unavailable' })
-    }
-  })
+  // Also under /api so the same checks work behind the Vercel rewrite (/api/readyz).
+  for (const base of ['', '/api']) {
+    app.get(`${base}/healthz`, { schema: { hide: true } }, async () => ({ status: 'ok' }))
+    app.get(`${base}/readyz`, { schema: { hide: true } }, async (req, reply) => {
+      try {
+        await ctx.ping()
+        return { status: 'ready' }
+      } catch (err) {
+        req.log.error({ err }, 'readiness check failed')
+        return reply.code(503).send({ status: 'unavailable' })
+      }
+    })
+  }
 
   await app.register(
     async (api) => {
@@ -86,6 +90,7 @@ export async function buildApp(ctx: AppContext, opts: BuildOptions = {}): Promis
       await api.register(crudRoutes)
       await api.register(broadcastRoutes)
       await api.register(unsubscribeRoutes)
+      await api.register(cronRoutes)
     },
     { prefix: '/api/v1' },
   )

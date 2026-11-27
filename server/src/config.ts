@@ -65,6 +65,8 @@ const schema = z
     GRAPH_CLIENT_SECRET: opt(z.string()),
     GRAPH_SENDER: opt(z.string()),
 
+    /** Shared secret for the scheduled tick (/api/v1/cron/broadcast). Unset = that endpoint is switched off. */
+    CRON_SECRET: opt(z.string().min(32, 'CRON_SECRET must be at least 32 characters')),
     WORKER_ENABLED: bool.default(true),
     WORKER_POLL_MS: z.coerce.number().int().min(100).default(5000),
     BROADCAST_PER_MINUTE: z.coerce.number().int().min(1).default(30),
